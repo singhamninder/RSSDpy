@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rssdpy"
+version = "0.1.0"
+description = "Response Surface Sampling Design (RSSD) for ECa-directed soil salinity sampling"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+keywords = ["soil salinity", "EMI", "sampling design", "RSSD", "ESAP", "precision agriculture"]
+dependencies = [
+    "geopandas>=1.0",
+    "matplotlib>=3.9",
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+    "scipy>=1.14",
+    "shapely>=2.0",
+    "statsmodels>=0.14",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
+    "ty>=0.0.1a14",
+    "hatchling>=1.25",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rssdpy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py312"
+extend-include = ["*.ipynb"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "N",   # pep8-naming
+    "NPY", # numpy-specific
+    "PD",  # pandas-vet
+]
+ignore = ["PD101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rssdpy"]
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.29.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.12",
+    "ty>=0.0.1a14",
+]
