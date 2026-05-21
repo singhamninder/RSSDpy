@@ -15,14 +15,39 @@ Layout:
     ``c = sqrt(radius_squared / n_components)``.
 """
 
-from __future__ import annotations
-
 import itertools
+from dataclasses import dataclass
 
 import numpy as np
 
 # Confirmed: Lesch/ESAP design constant (see source notes Section 4)
 ESAP_RADIUS_SQUARED: float = 3.84
+ESAP_TARGET_SAMPLE_SIZES: tuple[int, int, int] = (6, 12, 20)
+
+
+@dataclass(frozen=True)
+class ESAPSamplePlan:
+    """ESAP-oriented configuration for a single RSSD run.
+
+    Attributes
+    ----------
+    n_components : int
+        Number of principal-component dimensions used in the CCD.
+    target_size : int
+        Requested total RSSD sample size.
+    n_levels : int
+        Number of core CCD design levels.
+    n_extra : int
+        Number of extra sites to add after core-level assignment.
+    include_center : bool
+        Whether the center design level is included.
+    """
+
+    n_components: int
+    target_size: int
+    n_levels: int
+    n_extra: int
+    include_center: bool
 
 
 def central_composite_design(
@@ -109,3 +134,59 @@ def central_composite_design(
 
     design = np.vstack(parts)
     return design
+
+
+def esap_sample_plan(
+    n_components: int,
+    target_size: int,
+    *,
+    include_center: bool = False,
+    radius_squared: float = ESAP_RADIUS_SQUARED,
+) -> ESAPSamplePlan:
+    """Create an ESAP-style sample-size plan for RSSD.
+
+    Parameters
+    ----------
+    n_components : int
+        Number of principal-component dimensions for the CCD.
+    target_size : int
+        Desired total sample size. Must be one of ``(6, 12, 20)``.
+    include_center : bool
+        Whether to include the center point in the CCD.
+    radius_squared : float
+        CCD radius-squared constant passed through to
+        :func:`central_composite_design`.
+
+    Returns
+    -------
+    ESAPSamplePlan
+        Plan containing the number of core levels and required extra sites.
+
+    Raises
+    ------
+    ValueError
+        If ``target_size`` is unsupported or smaller than the CCD core size.
+    """
+    if target_size not in ESAP_TARGET_SAMPLE_SIZES:
+        raise ValueError(
+            f"target_size must be one of {ESAP_TARGET_SAMPLE_SIZES}, got {target_size}."
+        )
+    n_levels = len(
+        central_composite_design(
+            n_components=n_components,
+            include_center=include_center,
+            radius_squared=radius_squared,
+        )
+    )
+    if target_size < n_levels:
+        raise ValueError(
+            f"target_size={target_size} is smaller than CCD core size {n_levels} "
+            f"for n_components={n_components}."
+        )
+    return ESAPSamplePlan(
+        n_components=n_components,
+        target_size=target_size,
+        n_levels=n_levels,
+        n_extra=target_size - n_levels,
+        include_center=include_center,
+    )

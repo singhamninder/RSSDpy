@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from rssdpy.sampling.design import ESAP_RADIUS_SQUARED, central_composite_design
+from rssdpy.sampling.design import ESAP_RADIUS_SQUARED, central_composite_design, esap_sample_plan
 from rssdpy.sampling.rssd import RSSDesign, run_rssd
 from rssdpy.sampling.uniformity import average_distance
 
@@ -77,6 +77,15 @@ class TestCentralCompositeDesign:
         assert abs(ESAP_RADIUS_SQUARED - chi2.ppf(0.95, df=1)) < 2e-3
         assert abs(ESAP_RADIUS_SQUARED - 1.96**2) < 2e-3
 
+    def test_esap_sample_plan_2d_target_12(self) -> None:
+        plan = esap_sample_plan(n_components=2, target_size=12)
+        assert plan.n_levels == 8
+        assert plan.n_extra == 4
+
+    def test_esap_sample_plan_target_too_small_raises(self) -> None:
+        with pytest.raises(ValueError, match="smaller than CCD core size"):
+            esap_sample_plan(n_components=3, target_size=12)
+
 
 class TestAverageDistance:
     def test_single_cal_site_is_max_distance(self) -> None:
@@ -120,6 +129,7 @@ class TestRunRSSD:
         design = central_composite_design(n_components=3, include_center=False)
         result = run_rssd(scores, coords, design, n_extra=0)
         assert isinstance(result, RSSDesign)
+        assert len(result.selected_original_indices) == len(result.selected_indices)
 
     def test_selected_indices_count(self) -> None:
         scores, coords = self._make_scores_coords()
@@ -185,6 +195,29 @@ class TestRunRSSD:
         core_set = set(result.design_level_indices.tolist())
         extra_set = set(result.extra_indices.tolist())
         assert core_set.isdisjoint(extra_set)
+
+    def test_cube_extra_mode_runs(self) -> None:
+        scores, coords = self._make_scores_coords()
+        design = central_composite_design(n_components=3, include_center=False)
+        result = run_rssd(scores, coords, design, n_extra=2, extra_mode="cube")
+        assert len(result.extra_indices) <= 2
+        assert len(result.selected_indices) >= len(design)
+
+    def test_validation_pass_returns_indices(self) -> None:
+        scores, coords = self._make_scores_coords(n=180)
+        design = central_composite_design(n_components=3, include_center=False)
+        result = run_rssd(scores, coords, design, n_extra=2, n_validation=8)
+        assert len(result.validation_indices) >= 8
+        assert len(result.validation_original_indices) == len(result.validation_indices)
+
+    def test_original_index_mapping(self) -> None:
+        scores, coords = self._make_scores_coords(n=130)
+        design = central_composite_design(n_components=3, include_center=False)
+        original = np.arange(1000, 1130)
+        result = run_rssd(scores, coords, design, original_indices=original)
+        np.testing.assert_array_equal(
+            result.selected_original_indices, original[result.selected_indices]
+        )
 
     def test_full_pipeline_with_synthetic_fixture(
         self,

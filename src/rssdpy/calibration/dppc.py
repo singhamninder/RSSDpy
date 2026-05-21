@@ -9,8 +9,6 @@ Theory basis: Rhoades et al. (1989). SSSAJ 53(2): 433–439.
   https://doi.org/10.2136/sssaj1989.03615995005300020020x
 """
 
-from __future__ import annotations
-
 import logging
 
 import numpy as np

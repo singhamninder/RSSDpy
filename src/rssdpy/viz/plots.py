@@ -4,8 +4,6 @@ Only produces publication-ready matplotlib figures.  Does not write files;
 the caller is responsible for saving.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING
 

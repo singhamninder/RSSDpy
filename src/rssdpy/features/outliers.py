@@ -12,8 +12,6 @@ df=n_components))``.
 See also: ``docs/theory/rssd-source-notes.md`` — Section 3.
 """
 
-from __future__ import annotations
-
 import logging
 
 import numpy as np

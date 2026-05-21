@@ -12,8 +12,6 @@ Processing pipeline (source-ordered):
      so every score has mean 0 and variance 1.
 """
 
-from __future__ import annotations
-
 import logging
 
 import numpy as np

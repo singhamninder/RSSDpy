@@ -17,8 +17,6 @@ Field average (Confirmed: Paper 1):
   G = (n/N) ȳ_cal + ((N-n)/N) Ḡ_pred
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
 

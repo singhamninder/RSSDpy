@@ -14,8 +14,6 @@ Lack-of-fit F statistic (Confirmed: Paper 2):
   I_M = modified Moran's I on residuals.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 

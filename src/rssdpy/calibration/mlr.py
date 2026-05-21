@@ -35,8 +35,6 @@ APVE (Confirmed: Paper 2):
   APVE = s² × mean(1 + xⱼ' (X'X)⁻¹ xⱼ) over all N−n prediction sites.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
 from itertools import product as iproduct

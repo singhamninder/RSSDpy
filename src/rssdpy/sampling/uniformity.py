@@ -12,8 +12,6 @@ AD is minimised when calibration sites form an equilateral triangular grid
 (McBratney et al. 1981, cited in Paper 2).
 """
 
-from __future__ import annotations
-
 import numpy as np
 from scipy.spatial import KDTree
 

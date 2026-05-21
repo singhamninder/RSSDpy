@@ -18,10 +18,9 @@ Algorithm steps (Paper 2 order):
      cube design levels.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
+from typing import Literal
 
 import numpy as np
 
@@ -54,6 +53,16 @@ class RSSDesign:
         Integer indices of the extra sites added after swapping.
     swap_count : int
         Total number of accepted swaps.
+    selected_original_indices : np.ndarray
+        Original survey indices corresponding to ``selected_indices``.
+    design_level_original_indices : np.ndarray
+        Original survey indices for ``design_level_indices``.
+    extra_original_indices : np.ndarray
+        Original survey indices for ``extra_indices``.
+    validation_indices : np.ndarray
+        Optional validation/monitoring-site indices in the filtered arrays.
+    validation_original_indices : np.ndarray
+        Optional validation/monitoring-site indices in the original survey.
     """
 
     selected_indices: np.ndarray
@@ -64,6 +73,13 @@ class RSSDesign:
     ad_trace: list[float] = field(default_factory=list)
     extra_indices: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
     swap_count: int = 0
+    selected_original_indices: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
+    design_level_original_indices: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=int)
+    )
+    extra_original_indices: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
+    validation_indices: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
+    validation_original_indices: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
 
 
 def _build_candidate_sets(
@@ -119,12 +135,50 @@ def _build_candidate_sets(
     return candidates, dls_matrix
 
 
+def _cube_level_indices(design: np.ndarray) -> np.ndarray:
+    """Return index positions corresponding to cube levels in a CCD matrix."""
+    # Cube points have no zero coordinates; axial points have exactly n-1 zeros.
+    is_cube = np.all(np.abs(design) > 0.0, axis=1)
+    return np.flatnonzero(is_cube)
+
+
+def _cube_extra_candidate_pool(
+    scores: np.ndarray,
+    design: np.ndarray,
+    used_indices: set[int],
+    n_candidates: int,
+) -> np.ndarray:
+    """Build a candidate pool for ESAP-like cube-constrained extra-site selection."""
+    cube_idx = _cube_level_indices(design)
+    if len(cube_idx) == 0:
+        return np.array([], dtype=int)
+
+    remaining = np.array([i for i in range(len(scores)) if i not in used_indices], dtype=int)
+    if len(remaining) == 0:
+        return np.array([], dtype=int)
+
+    local_candidates, _ = _build_candidate_sets(
+        scores=scores[remaining],
+        design=design[cube_idx],
+        n_candidates=n_candidates,
+    )
+    candidate_pool: set[int] = set()
+    for level_candidates in local_candidates:
+        for local_site in level_candidates:
+            candidate_pool.add(int(remaining[local_site]))
+    return np.array(sorted(candidate_pool), dtype=int)
+
+
 def run_rssd(
     scores: np.ndarray,
     coords: np.ndarray,
     design: np.ndarray,
     n_extra: int = 0,
     n_candidates: int = 3,
+    *,
+    extra_mode: Literal["global", "cube"] = "global",
+    original_indices: np.ndarray | None = None,
+    n_validation: int = 0,
 ) -> RSSDesign:
     """Run the full RSSD site-selection algorithm.
 
@@ -144,6 +198,16 @@ def run_rssd(
     n_candidates : int
         Number of candidate sites per design level (ψ₁, ψ₂, ψ₃, …).
         Must be ≥ 1.  Default 3 matches Paper 2.
+    extra_mode : {"global", "cube"}
+        Strategy used for extra-site selection. ``"global"`` greedily searches
+        all remaining sites. ``"cube"`` restricts candidate extras to sites that
+        match remaining cube levels.
+    original_indices : np.ndarray | None
+        Optional mapping from filtered-array indices back to original survey row
+        indices. If omitted, identity mapping is used.
+    n_validation : int
+        Number of validation/monitoring sites to select from the remaining pool
+        after core and extras are finalized. Uses cube levels only.
 
     Returns
     -------
@@ -154,7 +218,8 @@ def run_rssd(
     ------
     ValueError
         If ``scores`` and ``coords`` have incompatible lengths, if ``design``
-        has more components than ``scores``, or if ``n_candidates < 1``.
+        has more components than ``scores``, if ``n_candidates < 1``, or if
+        ``extra_mode`` is unsupported.
 
     Notes
     -----
@@ -183,6 +248,17 @@ def run_rssd(
             f"Need at least {n_levels} survey sites to fill {n_levels} design levels, "
             f"but only {n_sites} sites provided."
         )
+    if extra_mode not in {"global", "cube"}:
+        raise ValueError(f"extra_mode must be 'global' or 'cube', got {extra_mode!r}")
+    if n_validation < 0:
+        raise ValueError(f"n_validation must be non-negative, got {n_validation}")
+
+    if original_indices is None:
+        original_indices = np.arange(n_sites, dtype=int)
+    else:
+        original_indices = np.asarray(original_indices, dtype=int)
+        if len(original_indices) != n_sites:
+            raise ValueError("original_indices must have the same number of rows as scores/coords.")
 
     # Step 1–2: build candidate sets ψ₁, ψ₂, ψ₃ (Confirmed: Paper 2)
     candidates, dls_matrix = _build_candidate_sets(scores, design, n_candidates)
@@ -229,10 +305,21 @@ def run_rssd(
         if len(remaining) == 0:
             logger.warning("No remaining sites to add as extra; stopping early.")
             break
+
+        candidate_pool = remaining
+        if extra_mode == "cube":
+            cube_pool = _cube_extra_candidate_pool(scores, design, used, n_candidates)
+            if len(cube_pool) == 0:
+                logger.warning(
+                    "Cube-constrained pool is empty; stopping extra additions after %d.",
+                    len(extra_indices),
+                )
+                break
+            candidate_pool = cube_pool
+
         best_ad = ad_trace[-1]
         best_site: int | None = None
-        for candidate_idx in range(len(remaining)):
-            site = remaining[candidate_idx]
+        for site in candidate_pool:
             trial_beta = np.concatenate([beta, [site]])
             trial_ad = average_distance(coords, trial_beta)
             if trial_ad < best_ad:
@@ -246,6 +333,7 @@ def run_rssd(
             break
         extra_indices.append(best_site)
         beta = np.append(beta, best_site)
+        used.add(best_site)
         remaining = remaining[remaining != best_site]
         ad_trace.append(best_ad)
 
@@ -259,13 +347,60 @@ def run_rssd(
         swap_count,
     )
 
+    selected_indices = beta.copy()
+    design_level_indices = selected_indices[:n_levels]
+    extra_index_array = np.array(extra_indices, dtype=int)
+    selected_original_indices = original_indices[selected_indices]
+    design_level_original = original_indices[design_level_indices]
+    extra_original = (
+        original_indices[extra_index_array] if len(extra_index_array) else np.array([], dtype=int)
+    )
+
+    validation_indices = np.array([], dtype=int)
+    validation_original = np.array([], dtype=int)
+    if n_validation > 0:
+        remaining_after_core = np.array(
+            [i for i in range(n_sites) if i not in set(selected_indices)]
+        )
+        cube_idx = _cube_level_indices(design)
+        cube_design = design[cube_idx]
+        if len(cube_design) == 0:
+            raise ValueError("n_validation requested but design has no cube levels.")
+        if n_validation < len(cube_design):
+            raise ValueError(
+                f"n_validation={n_validation} is smaller than cube-level count {len(cube_design)}."
+            )
+        if len(remaining_after_core) >= len(cube_design):
+            validation_result = run_rssd(
+                scores=scores[remaining_after_core],
+                coords=coords[remaining_after_core],
+                design=cube_design,
+                n_extra=n_validation - len(cube_design),
+                n_candidates=n_candidates,
+                extra_mode="cube",
+                original_indices=original_indices[remaining_after_core],
+                n_validation=0,
+            )
+            validation_indices = remaining_after_core[validation_result.selected_indices]
+            validation_original = validation_result.selected_original_indices
+        else:
+            logger.warning(
+                "Not enough remaining sites (%d) for requested validation run; skipping.",
+                len(remaining_after_core),
+            )
+
     return RSSDesign(
         selected_indices=beta,
-        design_level_indices=np.array(current_assignment, dtype=int),
+        design_level_indices=design_level_indices,
         dls_values=dls_values,
         ad_initial=ad_initial,
         ad_final=ad_final,
         ad_trace=ad_trace,
-        extra_indices=np.array(extra_indices, dtype=int),
+        extra_indices=extra_index_array,
         swap_count=swap_count,
+        selected_original_indices=selected_original_indices,
+        design_level_original_indices=design_level_original,
+        extra_original_indices=extra_original,
+        validation_indices=validation_indices,
+        validation_original_indices=validation_original,
     )
