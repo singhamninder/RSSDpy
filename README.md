@@ -40,34 +40,66 @@ cd RSSDpy
 uv sync --locked --all-extras --dev
 ```
 
+## Canonical survey schema
+
+RSSDpy uses a single tabular schema loaded from **CSV** or whitespace-delimited **TXT**
+(parsed to the same column layout). Required columns:
+
+| Column | Notes |
+|--------|--------|
+| `site_id` | Stable integer site identifier |
+| `x`, `y` | Projected coordinates (metres) |
+| `EMh`, `EMv` (or your channel names) | Positive ECa in dS/m |
+| `row` | Optional; transect surveys only |
+
+Legacy ESAP files (`.svy`, `.pro`) are not required at runtime; use them only for
+regression checks against desktop ESAP output. Convert vendor exports to CSV or TXT
+before loading.
+
 ## Quick start
 
 ```python
-import pandas as pd
 import numpy as np
-from rssdpy.features import ECaPCA, detect_outliers
-from rssdpy.sampling import central_composite_design, run_rssd
+from rssdpy.features import ECaPCA, detect_outliers_esap, iterative_esap_validation
+from rssdpy.io import export_selected_sites_csv, read_em_survey
+from rssdpy.sampling import esap_sample_plan, central_composite_design, run_rssd
 from rssdpy.calibration import fit_mlr_models
 from rssdpy.predict import predict_salinity
 
-# 1. Load ECa survey (dS/m, projected CRS)
-eca = pd.DataFrame({"EMh": [...], "EMv": [...]})
-coords = np.array([[easting, northing], ...])  # metres, UTM
+# 1. Parse raw EM survey (ESAP transect example: site_id, x, y, EMv, EMh, row)
+eca, coords, _meta = read_em_survey(
+    "survey.txt",
+    eca_columns=["EMv", "EMh"],
+    has_header=False,
+    column_names=["site_id", "x", "y", "EMv", "EMh", "row"],
+    crs="EPSG:32611",
+    require_projected_crs=True,
+)
 
-# 2. PCA on log-ECa
-pca = ECaPCA(n_components=3)
-scores, eigenvalues, _ = pca.fit_transform(eca)
+# 2. PCA + ESAP σ validation (mask 3.5σ, delete outliers > 4.5σ)
+pca = ECaPCA(n_components=2)
+eca_clean, scores, qc, original_idx = iterative_esap_validation(eca, pca)
+coords_clean = coords[original_idx]
 
-# 3. Detect and remove outliers
-mask, distances = detect_outliers(scores, alpha=0.001)
-scores_clean = scores[~mask]
-coords_clean = coords[~mask]
-
-# 4. Run RSSD site selection
-design = central_composite_design(n_components=3, radius_squared=3.84, include_center=False)
-result = run_rssd(scores_clean, coords_clean, design, n_extra=2)
-print(f"Selected {len(result.selected_indices)} calibration sites")
-print(f"Final AD = {result.ad_final:.2f} m")
+# 3. ESAP-style SRS design (n=12, D-Factor 0.96)
+design_factor = 0.96
+plan = esap_sample_plan(n_components=2, target_size=12, design_factor=design_factor)
+design = central_composite_design(
+    n_components=2, include_center=False, design_factor=design_factor
+)
+result = run_rssd(
+    scores,
+    coords_clean,
+    design,
+    n_extra=plan.n_extra,
+    extra_mode="cube",
+    eligible_mask=qc.eligible_mask,
+    original_indices=original_idx,
+    design_factor=design_factor,
+)
+print(f"Selected {len(result.selected_indices)} sites")
+print(f"Opt-Criteria = {result.opt_criteria:.3f}  (AD = {result.ad_final:.1f} m)")
+export_selected_sites_csv(result, coords_clean, "selected_sites.csv", design=design)
 
 # 5. Calibrate (after collecting soil cores at selected sites)
 cal_indices = result.selected_indices
@@ -80,12 +112,34 @@ predictions = predict_salinity(best, scores_clean, coords_clean, cal_indices, ln
 print(f"Field-average ECe estimate: {np.exp(predictions.field_mean):.2f} dS/m")
 ```
 
+## ESAP Field 10-6 regression (user-maintained)
+
+Desktop ESAP reference for USDA Field 10-6 (transect, 5101 sites, 2 signals):
+
+| Role | Typical file | Notes |
+|------|----------------|-------|
+| Survey input | `101710A (for ESAP).txt` | Whitespace-delimited: `site_id`, `x`, `y`, `EMv`, `EMh`, `row` |
+| Expected design | `106Frsd1.txt` | n=12, D-Factor **0.96**, Opt-Criteria **~1.26** |
+
+Suggested RSSDpy settings: `n_components=2`, `target_size=12`, `design_factor=0.96`,
+`extra_mode="cube"`, ESAP σ QC (`iterative_esap_validation`). Compare selected
+`site_id` values to ESAP; exact tie-breaking may differ while remaining algorithmically
+equivalent (document as Extension in source notes if needed).
+
+Opt-Criteria interpretation (ESAP manual): &lt;1.15 excellent, 1.15–1.30 reasonable,
+&gt;1.30 poor — applied to `result.opt_criteria`, not raw `ad_final` (metres).
+
 ## Development
 
 ```bash
-uv run ruff format .
-uv run ruff check --fix .
-uv run ty check .
+uv sync --locked --all-extras --dev
+uv run pre-commit install          # one-time per clone
+uv run pre-commit run --all-files  # optional: verify before first commit
+```
+
+Each commit runs ruff (lint + format) and ty via pre-commit. Run tests manually:
+
+```bash
 uv run pytest
 ```
 

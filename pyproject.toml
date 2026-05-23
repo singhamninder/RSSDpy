@@ -11,13 +11,12 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 keywords = ["soil salinity", "EMI", "sampling design", "RSSD", "ESAP", "precision agriculture"]
 dependencies = [
-    "geopandas>=1.0",
     "matplotlib>=3.9",
     "numpy>=2.0",
     "pandas>=2.2",
+    "pyproj>=3.6",
     "scikit-learn>=1.5",
     "scipy>=1.14",
-    "shapely>=2.0",
     "statsmodels>=0.14",
 ]
 
@@ -25,6 +24,7 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
+    "pre-commit>=4.0",
     "ruff>=0.9",
     "ty>=0.0.1a14",
     "hatchling>=1.25",
@@ -63,6 +63,7 @@ known-first-party = ["rssdpy"]
 [dependency-groups]
 dev = [
     "hatchling>=1.29.0",
+    "pre-commit>=4.0",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.12",
