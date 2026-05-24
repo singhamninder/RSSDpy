@@ -181,8 +181,8 @@ def esap_two_signal_design(design_factor: float = 1.0) -> np.ndarray:
     ``rsd#.txt`` outputs (outer axial ``±2.5``, cube ``±1.75``, inner axial
     ``±0.75`` at ``design_factor=1.0``), scaled by ``design_factor``.
 
-    Row order follows the ESAP Field 10-6 reference listing in
-    ``106Frsd1.txt`` so candidate-set construction matches desktop ESAP.
+    Row order follows the ESAP reference listing in ``106Frsd1.txt`` so
+    candidate-set construction matches desktop ESAP.
 
     Parameters
     ----------

@@ -133,8 +133,8 @@ def opt_criteria_esap(
 
     Notes
     -----
-    **Derived:** Calibrated against legacy ``106Frsd1.txt`` (Field 10-6,
-    Opt-Criteria ≈ 1.26). Uses ``3 × AD / (spacing × sqrt(N / n_cal))`` where
+    **Derived:** Calibrated against legacy ``106Frsd1.txt`` (Opt-Criteria ≈ 1.26).
+    Uses ``3 × AD / (spacing × sqrt(N / n_cal))`` where
     ``spacing`` is :func:`characteristic_spacing`.
     """
     if n_cal < 1:

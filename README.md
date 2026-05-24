@@ -112,37 +112,26 @@ predictions = predict_salinity(best, scores_clean, coords_clean, cal_indices, ln
 print(f"Field-average ECe estimate: {np.exp(predictions.field_mean):.2f} dS/m")
 ```
 
-## ESAP Field 10-6 regression (user-maintained)
+## Interactive demo notebook
 
-Desktop ESAP reference for USDA Field 10-6 (transect, 5101 sites, 2 signals):
+A Marimo notebook walks through the RSSD workflow on a bundled example transect:
 
-| Role | Typical file | Notes |
-|------|----------------|-------|
-| Survey input | `101710A (for ESAP).txt` | Comma-delimited: `x`, `y`, `EMv`, `EMh`, `row` (see `examples/data/field_10_6/`) |
-| Expected design | `106Frsd1.txt` | n=12, D-Factor **0.96**, Opt-Criteria **~1.26** |
-
-Suggested RSSDpy settings: `n_components=2`, `target_size=12`, `design_factor=0.96`,
-`design_mode="esap_two_signal"`, `extra_mode="cube"`, `opt_criteria_mode="esap"`,
-ESAP σ QC (`iterative_esap_validation`). Compare selected
-`site_id` values to ESAP; exact tie-breaking may differ while remaining algorithmically
-equivalent (document as Extension in source notes if needed).
-
-Opt-Criteria interpretation (ESAP manual): &lt;1.15 excellent, 1.15–1.30 reasonable,
-&gt;1.30 poor — applied to `result.opt_criteria`, not raw `ad_final` (metres).
-
-## Interactive notebook (Field 10-6)
-
-A Marimo notebook walks through loading, RSSD, mapping, and ESAP comparison for the
-Field 10-6 example data:
+1. Load survey data and review EM statistics (adjust EPSG if needed)
+2. Choose the number of calibration sites
+3. Run ESAP-style QC and RSSD site selection
+4. Export results and view map / PC diagnostics
 
 ```bash
 uv sync --locked --all-extras --dev
-uv run marimo edit notebooks/field_10_6_rssd.py   # interactive (browser)
-uv run marimo run notebooks/field_10_6_rssd.py    # read-only app
+uv run marimo edit notebooks/rssd_demo.py   # interactive (browser)
+uv run marimo run notebooks/rssd_demo.py    # read-only app
 ```
 
-Example data lives in `examples/data/field_10_6/`. Maps use Contextily and require
-network access on first tile fetch.
+Bundled example survey: `examples/data/field_10_6/101710A_for_esap.txt`. Maps use
+Contextily and require network access on first tile fetch.
+
+The workflow follows ESAP-RSSD: natural-log ECa transform, standardization, PCA,
+σ-based outlier handling, design-level matching, and AD-based spatial swapping.
 
 ## Development
 
