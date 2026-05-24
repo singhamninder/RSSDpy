@@ -127,11 +127,6 @@ uv run marimo edit notebooks/rssd_demo.py   # interactive (browser)
 uv run marimo run notebooks/rssd_demo.py    # read-only app
 ```
 
-Bundled example survey: `examples/data/field_10_6/101710A_for_esap.txt`. Maps use
-Contextily and require network access on first tile fetch.
-
-The workflow follows ESAP-RSSD: natural-log ECa transform, standardization, PCA,
-σ-based outlier handling, design-level matching, and AD-based spatial swapping.
 
 ## Development
 
@@ -161,5 +156,3 @@ uv run pytest
   Apparent Soil Electrical Conductivity. *Computers and Electronics in Agriculture*,
   46, 103–133.
 
-See `docs/theory/rssd-source-notes.md` for a detailed register of confirmed vs.
-extended theory claims.
