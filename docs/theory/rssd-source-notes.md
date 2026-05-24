@@ -55,6 +55,8 @@ Primary sources:
 | Flag sites where `d = sqrt(Σ κᵢ²) > threshold` | Confirmed | `[P2]` | Mahalanobis-equivalent using standardised PC scores |
 | Default threshold 4.03 cited in documentation notes for 3 PCs | **Needs verification** | Derived from chi-square? | `sqrt(chi2.ppf(0.999, df=3)) ≈ 4.03`. Must verify df in source. |
 | Threshold is `sqrt(chi2.ppf(1 - alpha, df=n_components))` | Derived | Standard chi-square result | `alpha=0.001` by convention; df depends on n_components used |
+| ESAP masking at 3.5σ and outliers at 4.5σ on PC distance | Confirmed | `[ESAP]` manual §3.4.2 | Same distance `d = sqrt(Σ κ²)` on standardised scores |
+| Chi-square mode (`detect_outliers`) vs ESAP σ mode (`detect_outliers_esap`) | Extension / Derived | Both use PC distance; different cutoffs | Prefer σ mode for ESAP regression parity |
 
 ### Threshold derivation note
 
@@ -74,7 +76,9 @@ correct df rather than hardcoding 4.03.
 | Axial points: `(±α, 0, 0)`, `(0, ±α, 0)`, `(0, 0, ±α)` where `α = sqrt(radius_squared)` | Confirmed | `[P2]` | |
 | Cube points: all `(±c, ±c, ±c)` where `c = sqrt(radius_squared / n_components)` | Confirmed | `[P2]` | For 3 components: `c = sqrt(3.84/3) ≈ 1.131` |
 | Design constant `radius_squared = 3.84` | Confirmed | `[P2]`, `[L05]` | See note below |
-| 2-component CCD variants | Extension | — | Not the primary ESAP target for 2-reading surveys per `[ESAP]`; see note |
+| ESAP design factor 0.90–1.10 scales all CCD levels | Confirmed | `[ESAP]` manual §3.5.2 | Implemented as `design *= design_factor` |
+| 2-component CCD without center → 8 levels | Extension | Generic CCD | Use `design_mode="esap_two_signal"` for ESAP 2-signal SRS (10 levels) |
+| ESAP 2-signal SRS template (±2.5, ±1.75, ±0.75 at D=1) | Confirmed | `[ESAP]` `106Frsd1.txt` | 10 core levels; 2 support for n=12 |
 | 4-component CCD variants | Extension | — | Not present in `[P2]` or `[ESAP]` |
 
 ### The `3.84` design constant
@@ -119,6 +123,10 @@ for the design, not a chi-square probability statement in 3D.
 | Add extra sites greedily (maximise AD reduction) up to target n₀ | Confirmed | `[P2]` | |
 | Extra-site pool is the 8 cube design levels using remaining N − n₀ sites | Confirmed | `[P2]` | For monitoring/validation sites |
 | AD is theoretically minimised by equilateral triangular grid spacing | Confirmed | `[P2]` (cites McBratney et al. 1981) | Theoretical lower bound |
+| ESAP Opt-Criteria is a dimensionless uniformity index | Confirmed | `[ESAP]` manual §3.5.2 | Lower is better; ≤1.30 “reasonable” on rectangular fields |
+| `opt_criteria ≈ AD / characteristic_spacing` | Derived | Extension | Cross-field normalisation |
+| `opt_criteria_esap ≈ 3 × AD / (spacing × sqrt(N / n_cal))` | Derived | Calibrated vs `106Frsd1.txt` | ESAP desktop parity |
+| `characteristic_spacing = sqrt(bbox_area / N)` | Derived | Extension | Metres; normalises AD across field sizes |
 
 ---
 
@@ -174,3 +182,48 @@ These are clearly labelled extensions that may be implemented in later phases:
 | DPPC deterministic model | Rhoades 1989 | `[R89]`, `[L05]` |
 | Kriging on MLR residuals / kriging with external drift | Geostatistical extension | `[P1]` (contrast case) |
 | Multi-sensor fusion (EM + gamma-ray + L-band) | SDSampling | `[SDK24]` |
+
+---
+
+## 11. RSSD workflow parity contract
+
+This section defines operational parity checks for the original ESAP RSSD workflow.
+Each item is labelled as **Confirmed** parity behavior or **Extension**.
+
+| Workflow checkpoint | Label | Acceptance criterion |
+|---------------------|-------|----------------------|
+| Canonical survey schema (`site_id`, `x`, `y`, `eca_*`) | Extension | All ingest paths normalize to this schema before PCA/RSSD. |
+| Candidate ranking per design level (`ψ1–ψ3`) | Confirmed | DLS = squared Euclidean distance in standardised PC space. |
+| Global uniqueness of candidate assignments | Confirmed | A site cannot appear in more than one design-level candidate set. |
+| Initial assignment | Confirmed | Core set starts from the `ψ1` match for each design level. |
+| Swapping loop | Confirmed | Trial `ψ2`, then `ψ3`, retain only if AD decreases; stop when no improvement. |
+| Extra-site selection (`extra_mode="global"`) | Extension | Greedy AD reduction over all remaining survey sites. |
+| Extra-site selection (`extra_mode="cube"`) | Confirmed | Extra candidates are constrained by remaining cube-level matches. |
+| Validation/monitoring pass | Confirmed | Optional second RSSD pass on remaining sites using cube levels only. |
+| Original index mapping | Extension | Output includes filtered and original indices to avoid ID drift. |
+| Export compatibility | Extension | Field-ready outputs use CSV, optional ESAP-like text summary. |
+| ESAP σ QC (3.5 mask / 4.5 outlier) | Confirmed | `detect_outliers_esap`; `eligible_mask` on `run_rssd` |
+| Design factor on CCD | Confirmed | `central_composite_design(..., design_factor=...)` |
+| Opt-Criteria on `RSSDesign` | Derived | `opt_criteria_from_ad`; exported in CSV/report |
+
+### RSSD workflow compatibility scope
+
+- The package targets ESAP RSSD site-selection parity, not SaltMapper prediction file parity.
+- Native ESAP text/binary outputs (`*.rsd1.txt`, `*.gps1.txt`, `*.xrs1.asc`) are treated as
+  compatibility references rather than mandatory interchange formats.
+- EM survey imports accept **`.csv`** and **`.txt`** only; once normalized, the internal
+  workflow is format-agnostic.
+
+---
+
+## 12. Canonical CSV survey schema (modern interchange)
+
+| Column | Required | Notes |
+|--------|----------|-------|
+| `site_id` | yes | Stable integer identifier (ESAP transect surveys) |
+| `x`, `y` | yes | Projected coordinates (metres, e.g. UTM) |
+| `EMh`, `EMv`, … | 1–2 channels | Positive ECa in dS/m; `ln` applied in `ECaPCA` |
+| `row` | transect only | Optional row number for transect layouts |
+
+Legacy `.svy` / `.pro` files are **not** required for RSSD; they remain useful as
+regression references when validating against ESAP desktop output.

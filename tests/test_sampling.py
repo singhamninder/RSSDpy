@@ -77,10 +77,19 @@ class TestCentralCompositeDesign:
         assert abs(ESAP_RADIUS_SQUARED - chi2.ppf(0.95, df=1)) < 2e-3
         assert abs(ESAP_RADIUS_SQUARED - 1.96**2) < 2e-3
 
-    def test_esap_sample_plan_2d_target_12(self) -> None:
+    def test_esap_sample_plan_2d_target_12_ccd(self) -> None:
         plan = esap_sample_plan(n_components=2, target_size=12)
         assert plan.n_levels == 8
         assert plan.n_extra == 4
+
+    def test_esap_sample_plan_2d_target_12_two_signal(self) -> None:
+        plan = esap_sample_plan(
+            n_components=2,
+            target_size=12,
+            design_mode="esap_two_signal",
+        )
+        assert plan.n_levels == 10
+        assert plan.n_extra == 2
 
     def test_esap_sample_plan_target_too_small_raises(self) -> None:
         with pytest.raises(ValueError, match="smaller than CCD core size"):
