@@ -24,7 +24,7 @@ from typing import Literal
 
 import numpy as np
 
-from rssdpy.sampling.uniformity import average_distance, opt_criteria_from_ad
+from rssdpy.sampling.uniformity import average_distance, compute_opt_criteria
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +193,7 @@ def run_rssd(
     n_validation: int = 0,
     eligible_mask: np.ndarray | None = None,
     design_factor: float = 1.0,
+    opt_criteria_mode: str = "derived",
 ) -> RSSDesign:
     """Run the full RSSD site-selection algorithm.
 
@@ -227,6 +228,8 @@ def run_rssd(
         selected (ESAP masked sites should be ``False``).
     design_factor : float
         Design-factor value recorded on the result (for exports/metadata).
+    opt_criteria_mode : {"derived", "esap"}
+        Opt-Criteria reporting mode. Use ``"esap"`` for ESAP desktop parity.
 
     Returns
     -------
@@ -271,6 +274,10 @@ def run_rssd(
         raise ValueError(f"extra_mode must be 'global' or 'cube', got {extra_mode!r}")
     if n_validation < 0:
         raise ValueError(f"n_validation must be non-negative, got {n_validation}")
+    if opt_criteria_mode not in {"derived", "esap"}:
+        raise ValueError(
+            f"opt_criteria_mode must be 'derived' or 'esap', got {opt_criteria_mode!r}"
+        )
 
     if original_indices is None:
         original_indices = np.arange(n_sites, dtype=int)
@@ -364,7 +371,12 @@ def run_rssd(
         ad_trace.append(best_ad)
 
     ad_final = ad_trace[-1]
-    opt_criteria = opt_criteria_from_ad(ad_final, coords)
+    opt_criteria = compute_opt_criteria(
+        ad_final,
+        coords,
+        len(beta),
+        mode=opt_criteria_mode,
+    )
     logger.info(
         "RSSD complete: %d core + %d extra sites, AD %.2f → %.2f, Opt-Criteria %.3f, %d swaps.",
         n_levels,
@@ -413,6 +425,7 @@ def run_rssd(
                 n_validation=0,
                 eligible_mask=remaining_eligible,
                 design_factor=design_factor,
+                opt_criteria_mode=opt_criteria_mode,
             )
             validation_indices = remaining_after_core[validation_result.selected_indices]
             validation_original = validation_result.selected_original_indices

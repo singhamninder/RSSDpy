@@ -108,3 +108,72 @@ def opt_criteria_from_ad(ad: float, coords: np.ndarray) -> float:
     """
     spacing = characteristic_spacing(coords)
     return float(ad / spacing)
+
+
+def opt_criteria_esap(
+    ad: float,
+    coords: np.ndarray,
+    n_cal: int,
+) -> float:
+    """Convert AD to an ESAP-calibrated Opt-Criteria value.
+
+    Parameters
+    ----------
+    ad : float
+        Average nearest-calibration distance in coordinate units.
+    coords : np.ndarray
+        Full survey coordinates used for the AD calculation.
+    n_cal : int
+        Number of selected calibration sites.
+
+    Returns
+    -------
+    float
+        Dimensionless ESAP Opt-Criteria index.
+
+    Notes
+    -----
+    **Derived:** Calibrated against legacy ``106Frsd1.txt`` (Field 10-6,
+    Opt-Criteria ≈ 1.26). Uses ``3 × AD / (spacing × sqrt(N / n_cal))`` where
+    ``spacing`` is :func:`characteristic_spacing`.
+    """
+    if n_cal < 1:
+        raise ValueError(f"n_cal must be ≥ 1, got {n_cal}")
+    n_sites = len(coords)
+    if n_sites < n_cal:
+        raise ValueError(f"n_cal={n_cal} exceeds survey size {n_sites}.")
+    spacing = characteristic_spacing(coords)
+    return float(3.0 * ad / (spacing * np.sqrt(n_sites / n_cal)))
+
+
+def compute_opt_criteria(
+    ad: float,
+    coords: np.ndarray,
+    n_cal: int,
+    *,
+    mode: str = "derived",
+) -> float:
+    """Compute Opt-Criteria using the selected reporting mode.
+
+    Parameters
+    ----------
+    ad : float
+        Average nearest-calibration distance.
+    coords : np.ndarray
+        Survey coordinates.
+    n_cal : int
+        Number of selected calibration sites.
+    mode : {"derived", "esap"}
+        ``"derived"`` uses ``AD / characteristic_spacing``; ``"esap"`` uses
+        :func:`opt_criteria_esap`.
+
+    Returns
+    -------
+    float
+        Dimensionless uniformity index.
+    """
+    if mode == "esap":
+        return opt_criteria_esap(ad, coords, n_cal)
+    if mode == "derived":
+        return opt_criteria_from_ad(ad, coords)
+    raise ValueError(f"opt_criteria mode must be 'derived' or 'esap', got {mode!r}")

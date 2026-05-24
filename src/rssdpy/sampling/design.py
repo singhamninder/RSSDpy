@@ -18,6 +18,7 @@ Layout:
 import itertools
 import logging
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
@@ -28,6 +29,13 @@ ESAP_RADIUS_SQUARED: float = 3.84
 ESAP_TARGET_SAMPLE_SIZES: tuple[int, int, int] = (6, 12, 20)
 ESAP_DESIGN_FACTOR_MIN: float = 0.90
 ESAP_DESIGN_FACTOR_MAX: float = 1.10
+
+# ESAP 2-signal SRS template magnitudes at design_factor=1.0 (Confirmed via 106Frsd1)
+ESAP_TWO_SIGNAL_AXIAL_OUTER: float = 2.5
+ESAP_TWO_SIGNAL_CUBE: float = 1.75
+ESAP_TWO_SIGNAL_AXIAL_INNER: float = 0.75
+
+DesignMode = Literal["ccd", "esap_two_signal"]
 
 
 @dataclass(frozen=True)
@@ -54,6 +62,7 @@ class ESAPSamplePlan:
     n_extra: int
     include_center: bool
     design_factor: float
+    design_mode: DesignMode
 
 
 def _validate_design_factor(design_factor: float) -> None:
@@ -165,10 +174,100 @@ def central_composite_design(
     return design
 
 
+def esap_two_signal_design(design_factor: float = 1.0) -> np.ndarray:
+    """Generate the ESAP 2-signal SRS template in standardised PC space.
+
+    Returns 10 core design levels matching the level family observed in ESAP
+    ``rsd#.txt`` outputs (outer axial ``±2.5``, cube ``±1.75``, inner axial
+    ``±0.75`` at ``design_factor=1.0``), scaled by ``design_factor``.
+
+    Row order follows the ESAP Field 10-6 reference listing in
+    ``106Frsd1.txt`` so candidate-set construction matches desktop ESAP.
+
+    Parameters
+    ----------
+    design_factor : float
+        ESAP D-Factor multiplier (recommended 0.90–1.10).
+
+    Returns
+    -------
+    np.ndarray
+        Shape ``(10, 2)`` design matrix.
+    """
+    _validate_design_factor(design_factor)
+    outer = ESAP_TWO_SIGNAL_AXIAL_OUTER * design_factor
+    cube = ESAP_TWO_SIGNAL_CUBE * design_factor
+    inner = ESAP_TWO_SIGNAL_AXIAL_INNER * design_factor
+    return np.array(
+        [
+            [inner, 0.0],
+            [cube, cube],
+            [-cube, -cube],
+            [cube, -cube],
+            [-cube, cube],
+            [outer, 0.0],
+            [-outer, 0.0],
+            [0.0, outer],
+            [0.0, -outer],
+            [-inner, 0.0],
+        ],
+        dtype=float,
+    )
+
+
+def esap_sampling_design(
+    n_components: int,
+    *,
+    design_mode: DesignMode = "ccd",
+    include_center: bool = False,
+    radius_squared: float = ESAP_RADIUS_SQUARED,
+    design_factor: float = 1.0,
+) -> np.ndarray:
+    """Return a PC-space design matrix for RSSD site matching.
+
+    Parameters
+    ----------
+    n_components : int
+        Number of principal-component dimensions.
+    design_mode : {"ccd", "esap_two_signal"}
+        ``"ccd"`` uses the generic central composite design. ``"esap_two_signal"``
+        uses the strict ESAP 2-signal SRS template (10 levels).
+    include_center : bool
+        Passed to :func:`central_composite_design` when ``design_mode="ccd"``.
+    radius_squared : float
+        CCD radius-squared constant when ``design_mode="ccd"``.
+    design_factor : float
+        ESAP D-Factor multiplier.
+
+    Returns
+    -------
+    np.ndarray
+        Design matrix of shape ``(n_levels, n_components)``.
+
+    Raises
+    ------
+    ValueError
+        If ``design_mode="esap_two_signal"`` with ``n_components != 2``.
+    """
+    if design_mode == "esap_two_signal":
+        if n_components != 2:
+            raise ValueError(
+                f"design_mode='esap_two_signal' requires n_components=2, got {n_components}."
+            )
+        return esap_two_signal_design(design_factor=design_factor)
+    return central_composite_design(
+        n_components=n_components,
+        include_center=include_center,
+        radius_squared=radius_squared,
+        design_factor=design_factor,
+    )
+
+
 def esap_sample_plan(
     n_components: int,
     target_size: int,
     *,
+    design_mode: DesignMode = "ccd",
     include_center: bool = False,
     radius_squared: float = ESAP_RADIUS_SQUARED,
     design_factor: float = 1.0,
@@ -186,6 +285,9 @@ def esap_sample_plan(
     radius_squared : float
         CCD radius-squared constant passed through to
         :func:`central_composite_design`.
+    design_mode : {"ccd", "esap_two_signal"}
+        Design generator to use. For ESAP 2-signal parity, use
+        ``"esap_two_signal"``.
     design_factor : float
         ESAP design-factor multiplier for CCD levels.
 
@@ -204,8 +306,9 @@ def esap_sample_plan(
             f"target_size must be one of {ESAP_TARGET_SAMPLE_SIZES}, got {target_size}."
         )
     n_levels = len(
-        central_composite_design(
-            n_components=n_components,
+        esap_sampling_design(
+            n_components,
+            design_mode=design_mode,
             include_center=include_center,
             radius_squared=radius_squared,
             design_factor=design_factor,
@@ -223,4 +326,5 @@ def esap_sample_plan(
         n_extra=target_size - n_levels,
         include_center=include_center,
         design_factor=design_factor,
+        design_mode=design_mode,
     )
