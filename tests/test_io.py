@@ -8,7 +8,6 @@ import pytest
 
 from rssdpy.io import (
     export_selected_sites_csv,
-    export_selected_sites_geopackage,
     read_em_survey,
     selected_sites_table,
     validate_canonical_survey,
@@ -63,31 +62,38 @@ class TestCanonicalSurveyValidation:
 
 
 class TestSurveyParsers:
-    def test_read_em_survey_xyz(self, tmp_path: Path) -> None:
-        path = tmp_path / "demo.xyz"
-        path.write_text("100,200,12,8\n101,201,13,9\n", encoding="utf-8")
-        eca, coords, metadata = read_em_survey(
-            path,
-            eca_columns=["EMh", "EMv"],
-            format_hint="xyz",
-            column_names=["x", "y", "EMh", "EMv"],
+    def test_read_em_survey_csv(self, tmp_path: Path) -> None:
+        path = tmp_path / "survey.csv"
+        path.write_text(
+            "site_id,x,y,EMh,EMv\n1,100,200,12,8\n2,101,201,13,9\n",
+            encoding="utf-8",
         )
+        eca, coords, metadata = read_em_survey(path, eca_columns=["EMh", "EMv"])
         assert eca.shape == (2, 2)
         np.testing.assert_allclose(coords, np.array([[100.0, 200.0], [101.0, 201.0]]))
-        assert metadata["extension"] == ".xyz"
+        assert metadata["extension"] == ".csv"
 
-    def test_read_em_survey_dat_veris_profile(self, tmp_path: Path) -> None:
-        path = tmp_path / "veris.dat"
-        path.write_text("100\t200\t12.1\t8.4\n101\t201\t12.9\t8.8\n", encoding="utf-8")
+    def test_read_em_survey_txt_headerless(self, tmp_path: Path) -> None:
+        path = tmp_path / "survey.txt"
+        path.write_text("1 100 200 12 8\n2 101 201 13 9\n", encoding="utf-8")
         eca, coords, metadata = read_em_survey(
             path,
             eca_columns=["EMh", "EMv"],
-            format_hint="dat",
-            profile="veris",
+            column_names=["site_id", "x", "y", "EMh", "EMv"],
         )
-        assert eca["EMh"].iloc[0] == pytest.approx(12.1)
+        assert eca["EMh"].iloc[0] == pytest.approx(12.0)
         assert coords.shape == (2, 2)
-        assert metadata["profile"] == "veris"
+        assert metadata["extension"] == ".txt"
+
+    def test_unsupported_extension_raises(self, tmp_path: Path) -> None:
+        path = tmp_path / "survey.xyz"
+        path.write_text("100,200,12,8\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="Unsupported survey file"):
+            read_em_survey(
+                path,
+                eca_columns=["EMh", "EMv"],
+                column_names=["x", "y", "EMh", "EMv"],
+            )
 
 
 class TestExports:
@@ -102,7 +108,15 @@ class TestExports:
     def test_selected_sites_table_columns(self) -> None:
         result, coords = self._make_result()
         table = selected_sites_table(result, coords)
-        assert {"site_id", "x", "y", "selection_type"}.issubset(set(table.columns))
+        assert {
+            "site_id",
+            "x",
+            "y",
+            "selection_type",
+            "opt_criteria",
+            "design_factor",
+        }.issubset(set(table.columns))
+        assert "support" in table["selection_type"].to_numpy()
         assert len(table) == len(result.selected_indices)
 
     def test_export_selected_sites_csv(self, tmp_path: Path) -> None:
@@ -120,9 +134,5 @@ class TestExports:
         content = output.read_text(encoding="utf-8")
         assert "RSSD Selection Report" in content
         assert "Core sites" in content
-
-    def test_export_selected_sites_geopackage(self, tmp_path: Path) -> None:
-        result, coords = self._make_result()
-        output = tmp_path / "selected_sites.gpkg"
-        export_selected_sites_geopackage(result, coords, output)
-        assert output.exists()
+        assert "Opt-Criteria" in content
+        assert "Design factor" in content

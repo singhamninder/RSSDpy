@@ -5,12 +5,9 @@ the caller is responsible for saving.
 """
 
 import logging
-from typing import TYPE_CHECKING
 
 import numpy as np
-
-if TYPE_CHECKING:
-    from matplotlib.axes import Axes
+from matplotlib.axes import Axes
 
 logger = logging.getLogger(__name__)
 

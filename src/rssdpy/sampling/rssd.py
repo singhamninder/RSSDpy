@@ -24,7 +24,7 @@ from typing import Literal
 
 import numpy as np
 
-from rssdpy.sampling.uniformity import average_distance
+from rssdpy.sampling.uniformity import average_distance, opt_criteria_from_ad
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,10 @@ class RSSDesign:
         Optional validation/monitoring-site indices in the filtered arrays.
     validation_original_indices : np.ndarray
         Optional validation/monitoring-site indices in the original survey.
+    opt_criteria : float
+        ESAP-like dimensionless uniformity index derived from ``ad_final``.
+    design_factor : float
+        Design-factor multiplier used for the CCD (ESAP “D-Factor Val”).
     """
 
     selected_indices: np.ndarray
@@ -80,12 +84,15 @@ class RSSDesign:
     extra_original_indices: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
     validation_indices: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
     validation_original_indices: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
+    opt_criteria: float = 0.0
+    design_factor: float = 1.0
 
 
 def _build_candidate_sets(
     scores: np.ndarray,
     design: np.ndarray,
     n_candidates: int = 3,
+    eligible_mask: np.ndarray | None = None,
 ) -> tuple[list[list[int]], np.ndarray]:
     """Find the top-n_candidates survey sites per design level by DLS.
 
@@ -100,6 +107,8 @@ def _build_candidate_sets(
         Shape ``(n_levels, n_components)`` — CCD design levels.
     n_candidates : int
         Number of candidates per design level (ψ₁ … ψ_k).
+    eligible_mask : np.ndarray | None
+        Optional boolean mask of shape ``(N,)``. Ineligible sites are skipped.
 
     Returns
     -------
@@ -127,9 +136,12 @@ def _build_candidate_sets(
         for site_idx in sorted_sites:
             if len(level_candidates) == n_candidates:
                 break
-            if int(site_idx) not in assigned:
-                level_candidates.append(int(site_idx))
-                assigned.add(int(site_idx))
+            site = int(site_idx)
+            if eligible_mask is not None and not eligible_mask[site]:
+                continue
+            if site not in assigned:
+                level_candidates.append(site)
+                assigned.add(site)
         candidates.append(level_candidates)
 
     return candidates, dls_matrix
@@ -179,6 +191,8 @@ def run_rssd(
     extra_mode: Literal["global", "cube"] = "global",
     original_indices: np.ndarray | None = None,
     n_validation: int = 0,
+    eligible_mask: np.ndarray | None = None,
+    design_factor: float = 1.0,
 ) -> RSSDesign:
     """Run the full RSSD site-selection algorithm.
 
@@ -208,6 +222,11 @@ def run_rssd(
     n_validation : int
         Number of validation/monitoring sites to select from the remaining pool
         after core and extras are finalized. Uses cube levels only.
+    eligible_mask : np.ndarray | None
+        Optional boolean mask of shape ``(N,)`` — only ``True`` sites may be
+        selected (ESAP masked sites should be ``False``).
+    design_factor : float
+        Design-factor value recorded on the result (for exports/metadata).
 
     Returns
     -------
@@ -260,8 +279,15 @@ def run_rssd(
         if len(original_indices) != n_sites:
             raise ValueError("original_indices must have the same number of rows as scores/coords.")
 
+    if eligible_mask is not None:
+        eligible_mask = np.asarray(eligible_mask, dtype=bool)
+        if len(eligible_mask) != n_sites:
+            raise ValueError("eligible_mask must have the same length as scores/coords.")
+
     # Step 1–2: build candidate sets ψ₁, ψ₂, ψ₃ (Confirmed: Paper 2)
-    candidates, dls_matrix = _build_candidate_sets(scores, design, n_candidates)
+    candidates, dls_matrix = _build_candidate_sets(
+        scores, design, n_candidates, eligible_mask=eligible_mask
+    )
 
     # Initialise β = ψ₁ (Confirmed: Paper 2)
     current_assignment = [cands[0] for cands in candidates]
@@ -338,12 +364,14 @@ def run_rssd(
         ad_trace.append(best_ad)
 
     ad_final = ad_trace[-1]
+    opt_criteria = opt_criteria_from_ad(ad_final, coords)
     logger.info(
-        "RSSD complete: %d core + %d extra sites, AD %.2f → %.2f, %d swaps.",
+        "RSSD complete: %d core + %d extra sites, AD %.2f → %.2f, Opt-Criteria %.3f, %d swaps.",
         n_levels,
         len(extra_indices),
         ad_initial,
         ad_final,
+        opt_criteria,
         swap_count,
     )
 
@@ -371,6 +399,9 @@ def run_rssd(
                 f"n_validation={n_validation} is smaller than cube-level count {len(cube_design)}."
             )
         if len(remaining_after_core) >= len(cube_design):
+            remaining_eligible = None
+            if eligible_mask is not None:
+                remaining_eligible = eligible_mask[remaining_after_core]
             validation_result = run_rssd(
                 scores=scores[remaining_after_core],
                 coords=coords[remaining_after_core],
@@ -380,6 +411,8 @@ def run_rssd(
                 extra_mode="cube",
                 original_indices=original_indices[remaining_after_core],
                 n_validation=0,
+                eligible_mask=remaining_eligible,
+                design_factor=design_factor,
             )
             validation_indices = remaining_after_core[validation_result.selected_indices]
             validation_original = validation_result.selected_original_indices
@@ -403,4 +436,6 @@ def run_rssd(
         extra_original_indices=extra_original,
         validation_indices=validation_indices,
         validation_original_indices=validation_original,
+        opt_criteria=opt_criteria,
+        design_factor=design_factor,
     )

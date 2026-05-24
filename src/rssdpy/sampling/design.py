@@ -16,13 +16,18 @@ Layout:
 """
 
 import itertools
+import logging
 from dataclasses import dataclass
 
 import numpy as np
 
+logger = logging.getLogger(__name__)
+
 # Confirmed: Lesch/ESAP design constant (see source notes Section 4)
 ESAP_RADIUS_SQUARED: float = 3.84
 ESAP_TARGET_SAMPLE_SIZES: tuple[int, int, int] = (6, 12, 20)
+ESAP_DESIGN_FACTOR_MIN: float = 0.90
+ESAP_DESIGN_FACTOR_MAX: float = 1.10
 
 
 @dataclass(frozen=True)
@@ -48,12 +53,26 @@ class ESAPSamplePlan:
     n_levels: int
     n_extra: int
     include_center: bool
+    design_factor: float
+
+
+def _validate_design_factor(design_factor: float) -> None:
+    if design_factor <= 0:
+        raise ValueError(f"design_factor must be positive, got {design_factor}")
+    if not ESAP_DESIGN_FACTOR_MIN <= design_factor <= ESAP_DESIGN_FACTOR_MAX:
+        logger.warning(
+            "design_factor=%.3f is outside ESAP-recommended range [%.2f, %.2f].",
+            design_factor,
+            ESAP_DESIGN_FACTOR_MIN,
+            ESAP_DESIGN_FACTOR_MAX,
+        )
 
 
 def central_composite_design(
     n_components: int = 3,
     radius_squared: float = ESAP_RADIUS_SQUARED,
     include_center: bool = False,
+    design_factor: float = 1.0,
 ) -> np.ndarray:
     """Generate a Central Composite Design (CCD) in standardised PC space.
 
@@ -76,6 +95,9 @@ def central_composite_design(
         If ``True``, append the origin ``(0, 0, …)`` as a final row.
         ESAP-RSSD omits the center point; set ``False`` for ESAP-compatible
         behaviour.
+    design_factor : float
+        Multiplier applied to all design levels (ESAP “D-Factor Val”).
+        Recommended range 0.90–1.10 per ESAP manual §3.5.2.
 
     Returns
     -------
@@ -113,6 +135,7 @@ def central_composite_design(
         raise ValueError(f"n_components must be ≥ 2, got {n_components}")
     if radius_squared <= 0:
         raise ValueError(f"radius_squared must be positive, got {radius_squared}")
+    _validate_design_factor(design_factor)
 
     alpha = np.sqrt(radius_squared)  # axial extent
     c = np.sqrt(radius_squared / n_components)  # cube-point half-extent
@@ -133,6 +156,12 @@ def central_composite_design(
         parts.append(np.zeros((1, n_components)))
 
     design = np.vstack(parts)
+    if design_factor != 1.0:
+        center_rows = 1 if include_center else 0
+        if center_rows:
+            design[:-center_rows] *= design_factor
+        else:
+            design *= design_factor
     return design
 
 
@@ -142,6 +171,7 @@ def esap_sample_plan(
     *,
     include_center: bool = False,
     radius_squared: float = ESAP_RADIUS_SQUARED,
+    design_factor: float = 1.0,
 ) -> ESAPSamplePlan:
     """Create an ESAP-style sample-size plan for RSSD.
 
@@ -156,6 +186,8 @@ def esap_sample_plan(
     radius_squared : float
         CCD radius-squared constant passed through to
         :func:`central_composite_design`.
+    design_factor : float
+        ESAP design-factor multiplier for CCD levels.
 
     Returns
     -------
@@ -176,6 +208,7 @@ def esap_sample_plan(
             n_components=n_components,
             include_center=include_center,
             radius_squared=radius_squared,
+            design_factor=design_factor,
         )
     )
     if target_size < n_levels:
@@ -189,4 +222,5 @@ def esap_sample_plan(
         n_levels=n_levels,
         n_extra=target_size - n_levels,
         include_center=include_center,
+        design_factor=design_factor,
     )

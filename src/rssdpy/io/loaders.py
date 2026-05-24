@@ -4,35 +4,17 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 from pyproj import CRS
 
 logger = logging.getLogger(__name__)
 
-_DELIMITED_PROFILES: dict[str, dict[str, str | list[str] | bool]] = {
-    "veris": {
-        "delimiter": "\t",
-        "column_names": ["x", "y", "EMh", "EMv"],
-        "has_header": False,
-    },
-    "hol31": {
-        "delimiter": r"\s+",
-        "column_names": ["x", "y", "EM"],
-        "has_header": False,
-    },
-    "bwd101p": {
-        "delimiter": r"\s+",
-        "column_names": ["y", "x", "EMh", "EMv", "flag"],
-        "has_header": False,
-    },
-}
+_SUPPORTED_SURVEY_SUFFIXES: frozenset[str] = frozenset({".csv", ".txt"})
 
-_EM_EXTENSION_DEFAULTS: dict[str, dict[str, str | bool]] = {
-    ".txt": {"delimiter": r"\s+", "has_header": True},
-    ".xyz": {"delimiter": ",", "has_header": False},
-    ".dat": {"delimiter": r"\s+", "has_header": False},
+_SURVEY_DEFAULTS: dict[str, dict[str, str | bool]] = {
+    ".csv": {"delimiter": ",", "has_header": True},
+    ".txt": {"delimiter": r"\s+", "has_header": False},
 }
 
 
@@ -167,7 +149,7 @@ def load_eca_csv(
     y_col: str = "y",
     delimiter: str = ",",
 ) -> tuple[pd.DataFrame, np.ndarray]:
-    """Load an ECa survey from a CSV file.
+    """Load an ECa survey from a comma-separated CSV file.
 
     Parameters
     ----------
@@ -214,70 +196,6 @@ def load_eca_csv(
     return eca, coords
 
 
-def load_eca_geodataframe(
-    path: str | Path,
-    eca_columns: list[str],
-    layer: str | None = None,
-) -> tuple[pd.DataFrame, np.ndarray, str | None]:
-    """Load an ECa survey from a vector file (Shapefile, GeoJSON, GPKG, …).
-
-    Parameters
-    ----------
-    path : str | Path
-        Path to the vector file.
-    eca_columns : list[str]
-        Names of the ECa reading columns.
-    layer : str | None
-        Layer name for multi-layer formats (e.g. GeoPackage).
-
-    Returns
-    -------
-    eca : pd.DataFrame
-        Columns are the names listed in ``eca_columns``.
-    coords : np.ndarray
-        Shape ``(N, 2)`` — ``[[x, y], …]`` extracted from geometry centroids.
-    crs : str | None
-        CRS string (WKT or EPSG code).  ``None`` if undefined.
-
-    Raises
-    ------
-    ValueError
-        If required columns are missing, if the CRS is geographic (not
-        projected), or if geometry is not point-like.
-    FileNotFoundError
-        If the file does not exist.
-    """
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Vector file not found: {path}")
-
-    kwargs: dict = {}
-    if layer is not None:
-        kwargs["layer"] = layer
-
-    gdf = gpd.read_file(path, **kwargs)
-
-    missing = set(eca_columns) - set(gdf.columns)
-    if missing:
-        raise ValueError(f"Vector file is missing required ECa columns: {sorted(missing)}")
-
-    if gdf.crs is None:
-        logger.warning("GeoDataFrame has no CRS defined.  Distance calculations may be wrong.")
-        crs_str = None
-    elif gdf.crs.is_geographic:
-        raise ValueError(
-            "CRS is geographic (degrees).  Reproject to a projected CRS (e.g. UTM) "
-            "before running RSSD — distance calculations require metres."
-        )
-    else:
-        crs_str = gdf.crs.to_wkt()
-        logger.info("Loaded %d sites with CRS: %s", len(gdf), gdf.crs.name)
-
-    coords = np.column_stack([gdf.geometry.x.to_numpy(), gdf.geometry.y.to_numpy()])
-    eca = gdf[eca_columns].copy()
-    return eca, coords, crs_str
-
-
 def read_em_survey(
     path: str | Path,
     eca_columns: list[str],
@@ -285,8 +203,7 @@ def read_em_survey(
     x_col: str = "x",
     y_col: str = "y",
     site_id_col: str = "site_id",
-    format_hint: Literal["txt", "xyz", "dat"] | None = None,
-    profile: str | None = None,
+    format_hint: Literal["txt", "csv"] | None = None,
     delimiter: str | None = None,
     has_header: bool | None = None,
     column_names: list[str] | None = None,
@@ -294,12 +211,15 @@ def read_em_survey(
     require_projected_crs: bool = False,
     encoding: str = "utf-8",
 ) -> tuple[pd.DataFrame, np.ndarray, dict[str, str | int | None]]:
-    """Parse EM survey files and normalize to RSSD canonical columns.
+    """Parse a CSV or whitespace-delimited TXT survey into canonical columns.
+
+    Only ``.csv`` and ``.txt`` inputs are supported. TXT files are read into a
+    tabular form and validated like CSV.
 
     Parameters
     ----------
     path : str | Path
-        Input EM survey file path.
+        Input EM survey file path (``.csv`` or ``.txt``).
     eca_columns : list[str]
         ECa channel names to keep in the normalized frame.
     x_col : str
@@ -308,12 +228,11 @@ def read_em_survey(
         Y/northing column name in the parsed table.
     site_id_col : str
         Site identifier column name in the normalized table.
-    format_hint : {'txt', 'xyz', 'dat'} | None
-        Optional parser hint when extension is ambiguous.
-    profile : str | None
-        Optional parser profile for known vendor formats (e.g. ``"veris"``).
+    format_hint : {'txt', 'csv'} | None
+        Optional parser hint when the file extension is missing or ambiguous.
     delimiter : str | None
-        Optional explicit delimiter override.
+        Optional explicit delimiter override (default: ``,`` for CSV, whitespace
+        for TXT).
     has_header : bool | None
         Optional explicit header flag override.
     column_names : list[str] | None
@@ -334,7 +253,8 @@ def read_em_survey(
     Raises
     ------
     ValueError
-        If parser options are inconsistent or required columns are missing.
+        If the file type is unsupported, parser options are inconsistent, or
+        required columns are missing.
     FileNotFoundError
         If ``path`` does not exist.
     """
@@ -342,41 +262,31 @@ def read_em_survey(
     if not source_path.exists():
         raise FileNotFoundError(f"EM survey file not found: {source_path}")
 
-    extension = source_path.suffix.lower()
     if format_hint is not None:
         extension = f".{format_hint.lower()}"
-    defaults = _EM_EXTENSION_DEFAULTS.get(extension, {})
-    if not defaults and profile is None:
+    else:
+        extension = source_path.suffix.lower()
+
+    if extension not in _SUPPORTED_SURVEY_SUFFIXES:
+        supported = ", ".join(sorted(_SUPPORTED_SURVEY_SUFFIXES))
         raise ValueError(
-            f"Unsupported EM survey extension {source_path.suffix!r}. "
-            "Use format_hint or profile for custom parsing."
+            f"Unsupported survey file {source_path.name!r} ({extension!r}). "
+            f"Supported inputs: {supported}. "
+            "Convert other formats to CSV or TXT with canonical columns."
         )
 
-    profile_settings: dict[str, str | list[str] | bool] = (
-        _DELIMITED_PROFILES.get(profile, {}) if profile is not None else {}
-    )
-    parse_delimiter = delimiter or profile_settings.get("delimiter") or defaults.get("delimiter")
-    parse_has_header = (
-        has_header
-        if has_header is not None
-        else profile_settings.get("has_header", defaults.get("has_header"))
-    )
-    parse_column_names: list[str] | None = column_names
-    if parse_column_names is None:
-        profile_names = profile_settings.get("column_names")
-        if isinstance(profile_names, list):
-            parse_column_names = [str(name) for name in profile_names]
+    defaults = _SURVEY_DEFAULTS[extension]
+    parse_delimiter = delimiter or str(defaults["delimiter"])
+    parse_has_header = has_header if has_header is not None else bool(defaults["has_header"])
 
-    if parse_delimiter is None or parse_has_header is None:
-        raise ValueError("Could not infer delimiter/header settings; provide explicit options.")
-    if not parse_has_header and parse_column_names is None:
+    if not parse_has_header and column_names is None:
         raise ValueError("column_names are required when has_header=False.")
 
     raw = _read_delimited(
         source_path,
-        delimiter=str(parse_delimiter),
-        has_header=bool(parse_has_header),
-        column_names=parse_column_names,
+        delimiter=parse_delimiter,
+        has_header=parse_has_header,
+        column_names=column_names,
         encoding=encoding,
     )
     if site_id_col not in raw.columns:
@@ -397,11 +307,11 @@ def read_em_survey(
     metadata: dict[str, str | int | None] = {
         "source_path": str(source_path),
         "extension": extension,
-        "profile": profile,
         "n_sites": int(len(canonical)),
         "site_id_col": site_id_col,
         "x_col": x_col,
         "y_col": y_col,
         "crs": crs,
     }
+    logger.info("Loaded %d survey sites from %s", len(canonical), source_path)
     return eca, coords, metadata

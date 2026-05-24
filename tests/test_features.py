@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from rssdpy.features.outliers import detect_outliers, outlier_threshold
+from rssdpy.features.outliers import (
+    detect_outliers,
+    detect_outliers_esap,
+    outlier_threshold,
+    pc_distances,
+)
 from rssdpy.features.pca import ECaPCA
 
 
@@ -128,3 +133,19 @@ class TestOutlierDetection:
     def test_invalid_alpha_raises(self) -> None:
         with pytest.raises(ValueError, match="alpha"):
             outlier_threshold(3, alpha=1.5)
+
+
+class TestESAPOutlierDetection:
+    def test_esap_masking_and_outlier_thresholds(self) -> None:
+        scores = np.array([[0.0, 0.0], [3.6, 0.0], [5.0, 0.0]])
+        qc = detect_outliers_esap(scores, masking_std=3.5, outlier_std=4.5)
+        assert not qc.masking_mask[0]
+        assert qc.masking_mask[1]
+        assert qc.outlier_mask[2]
+        assert qc.eligible_mask[0]
+        assert not qc.eligible_mask[1]
+        assert not qc.eligible_mask[2]
+
+    def test_pc_distances_matches_manual(self) -> None:
+        scores = np.array([[3.0, 4.0]])
+        np.testing.assert_allclose(pc_distances(scores), [5.0])

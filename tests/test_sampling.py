@@ -6,7 +6,7 @@ import pytest
 
 from rssdpy.sampling.design import ESAP_RADIUS_SQUARED, central_composite_design, esap_sample_plan
 from rssdpy.sampling.rssd import RSSDesign, run_rssd
-from rssdpy.sampling.uniformity import average_distance
+from rssdpy.sampling.uniformity import average_distance, opt_criteria_from_ad
 
 
 class TestCentralCompositeDesign:
@@ -85,6 +85,11 @@ class TestCentralCompositeDesign:
     def test_esap_sample_plan_target_too_small_raises(self) -> None:
         with pytest.raises(ValueError, match="smaller than CCD core size"):
             esap_sample_plan(n_components=3, target_size=12)
+
+    def test_design_factor_scales_levels(self) -> None:
+        base = central_composite_design(n_components=2, include_center=False)
+        scaled = central_composite_design(n_components=2, include_center=False, design_factor=0.96)
+        np.testing.assert_allclose(scaled, base * 0.96, rtol=1e-10)
 
 
 class TestAverageDistance:
@@ -209,6 +214,22 @@ class TestRunRSSD:
         result = run_rssd(scores, coords, design, n_extra=2, n_validation=8)
         assert len(result.validation_indices) >= 8
         assert len(result.validation_original_indices) == len(result.validation_indices)
+
+    def test_opt_criteria_positive(self) -> None:
+        scores, coords = self._make_scores_coords()
+        design = central_composite_design(n_components=3, include_center=False)
+        result = run_rssd(scores, coords, design, n_extra=1)
+        assert result.opt_criteria > 0
+        expected = opt_criteria_from_ad(result.ad_final, coords)
+        assert abs(result.opt_criteria - expected) < 1e-10
+
+    def test_eligible_mask_excludes_sites(self) -> None:
+        scores, coords = self._make_scores_coords(n=80)
+        design = central_composite_design(n_components=3, include_center=False)
+        eligible = np.ones(len(scores), dtype=bool)
+        eligible[0] = False
+        result = run_rssd(scores, coords, design, eligible_mask=eligible)
+        assert 0 not in result.selected_indices
 
     def test_original_index_mapping(self) -> None:
         scores, coords = self._make_scores_coords(n=130)
