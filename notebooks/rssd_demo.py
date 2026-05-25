@@ -398,7 +398,7 @@ app._unparsable_cell(
 
     mo.vstack([mo.md(\"### Map\"), fig_full])
     """,
-    name="_"
+    name="_",
 )
 
 
