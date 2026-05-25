@@ -33,6 +33,7 @@ notebook = [
     "marimo>=0.11",
     "geopandas>=1.0",
     "contextily>=1.6",
+    "ipykernel>=7.2.0",
 ]
 
 [tool.hatch.build.targets.wheel]
