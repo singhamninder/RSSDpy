@@ -81,8 +81,8 @@ pca = ECaPCA(n_components=2)
 eca_clean, scores, qc, original_idx = iterative_esap_validation(eca, pca)
 coords_clean = coords[original_idx]
 
-# 3. ESAP-style SRS design (n=12, D-Factor 0.96)
-design_factor = 0.96
+# 3. ESAP-style SRS design (n=12, D-Factor 1)
+design_factor = 1
 plan = esap_sample_plan(n_components=2, target_size=12, design_factor=design_factor)
 design = central_composite_design(
     n_components=2, include_center=False, design_factor=design_factor
@@ -101,15 +101,6 @@ print(f"Selected {len(result.selected_indices)} sites")
 print(f"Opt-Criteria = {result.opt_criteria:.3f}  (AD = {result.ad_final:.1f} m)")
 export_selected_sites_csv(result, coords_clean, "selected_sites.csv", design=design)
 
-# 5. Calibrate (after collecting soil cores at selected sites)
-cal_indices = result.selected_indices
-ln_ece = np.log(ece_measurements)  # measured ECe in dS/m at cal sites
-models = fit_mlr_models(scores_clean, coords_clean, cal_indices, ln_ece)
-best = models[0]  # ranked by PRESS
-
-# 6. Predict at all survey sites
-predictions = predict_salinity(best, scores_clean, coords_clean, cal_indices, ln_ece)
-print(f"Field-average ECe estimate: {np.exp(predictions.field_mean):.2f} dS/m")
 ```
 
 ## Demo notebook (Jupyter)
@@ -121,27 +112,6 @@ Python cells.
 2. Edit the config cell (`survey_path`, `crs`, `target_size`, `design_factor`)
 3. Run cells top-to-bottom for load summary, ESAP QC, RSSD selection, CSV export,
    map, and PC diagnostics
-
-### Run locally
-
-```bash
-uv sync --locked --all-extras --dev
-uv run jupyter lab
-```
-
-Then open `notebooks/rssd_demo.ipynb` in JupyterLab.
-
-### Share as HTML
-
-Use notebook HTML export when you want a portable artifact for stakeholder review.
-
-```bash
-uv sync --locked --all-extras --dev
-mkdir -p dist
-uv run jupyter nbconvert --to html notebooks/rssd_demo.ipynb --output-dir dist
-```
-
-Share the generated HTML file from `dist/`.
 
 ## Development
 
