@@ -18,7 +18,7 @@
 
 import marimo
 
-__generated_with = "0.23.8"
+__generated_with = "0.23.6"
 app = marimo.App(width="medium")
 
 
@@ -194,7 +194,7 @@ def _(crs_ctrl, mo, np, survey_upload):
             mo.ui.table(eca.describe().round(2)),
         ]
     )
-    return coords, crs, eca, upload_name
+    return coords, eca, upload_name
 
 
 @app.cell
@@ -318,30 +318,21 @@ def _(coords_clean, design, mo, result, upload_name):
     return
 
 
-@app.cell
-def _(
-    coords,
-    crs,
-    mo,
-    np,
-    original_idx,
-    plt_mpl,
-    qc,
-    result,
-):
+app._unparsable_cell(
+    """
     try:
         import contextily as ctx_basemap
         import geopandas as gpd
     except ImportError:
         mo.md(
-            """
+            \"\"\"
             ### Map
 
             Map rendering is unavailable in this deployment environment.
             Upload, QC, RSSD selection, CSV export, and PC scatter remain available.
             For full basemap support, run locally with:
             `uv run marimo run notebooks/rssd_demo.py`.
-            """
+            \"\"\"
         )
         return
 
@@ -355,9 +346,9 @@ def _(
 
     gdf = gpd.GeoDataFrame(
         {
-            "site_id": site_ids,
-            "masked": masked_full,
-            "selected": np.isin(np.arange(n_total), selected_original_idx),
+            \"site_id\": site_ids,
+            \"masked\": masked_full,
+            \"selected\": np.isin(np.arange(n_total), selected_original_idx),
         },
         geometry=gpd.points_from_xy(coords[:, 0], coords[:, 1]),
         crs=crs,
@@ -365,47 +356,50 @@ def _(
     gdf_web = gdf.to_crs(3857)
 
     fig_full, ax_full = plt_mpl.subplots(figsize=(10, 8))
-    background = gdf_web[~gdf_web["selected"] & ~gdf_web["masked"]]
-    masked_pts = gdf_web[gdf_web["masked"]]
-    selected_pts = gdf_web[gdf_web["selected"]]
+    background = gdf_web[~gdf_web[\"selected\"] & ~gdf_web[\"masked\"]]
+    masked_pts = gdf_web[gdf_web[\"masked\"]]
+    selected_pts = gdf_web[gdf_web[\"selected\"]]
 
     if len(background):
-        background.plot(ax=ax_full, color="#cccccc", markersize=1, alpha=0.5, label="Survey")
+        background.plot(ax=ax_full, color=\"#cccccc\", markersize=1, alpha=0.5, label=\"Survey\")
     if len(masked_pts):
         masked_pts.plot(
-            ax=ax_full, color="#f39c12", markersize=2, alpha=0.6, label="Masked (>3.5σ)"
+            ax=ax_full, color=\"#f39c12\", markersize=2, alpha=0.6, label=\"Masked (>3.5σ)\"
         )
     if len(selected_pts):
-        selected_pts.plot(ax=ax_full, color="#e74c3c", markersize=40, label="Selected", zorder=5)
+        selected_pts.plot(ax=ax_full, color=\"#e74c3c\", markersize=40, label=\"Selected\", zorder=5)
 
     for x_full, y_full, sid_full in zip(
         selected_pts.geometry.x,
         selected_pts.geometry.y,
-        selected_pts["site_id"],
+        selected_pts[\"site_id\"],
         strict=True,
     ):
         ax_full.annotate(
             str(int(sid_full)),
             (x_full, y_full),
             fontsize=7,
-            ha="center",
-            va="bottom",
+            ha=\"center\",
+            va=\"bottom\",
             xytext=(0, 4),
-            textcoords="offset points",
+            textcoords=\"offset points\",
         )
 
+    esri_world_imagery = ctx_basemap.providers["Esri"]["WorldImagery"]
     ctx_basemap.add_basemap(
         ax_full,
-        source=ctx_basemap.providers.Esri.WorldImagery,
+        source=esri_world_imagery,
         attribution=False,
     )
     ax_full.set_axis_off()
-    ax_full.set_title("Survey and RSSD-selected calibration sites")
-    ax_full.legend(loc="upper right", fontsize=8)
+    ax_full.set_title(\"Survey and RSSD-selected calibration sites\")
+    ax_full.legend(loc=\"upper right\", fontsize=8)
     plt_mpl.tight_layout()
 
-    mo.vstack([mo.md("### Map"), fig_full])
-    return
+    mo.vstack([mo.md(\"### Map\"), fig_full])
+    """,
+    name="_"
+)
 
 
 @app.cell
