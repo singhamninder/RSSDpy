@@ -16,4 +16,4 @@ wheels/
 notebooks/*.html
 notebooks/__marimo__/
 site/
-examples/data/field_10_6/selected_sites.csv
+examples/data/selected_sites.csv

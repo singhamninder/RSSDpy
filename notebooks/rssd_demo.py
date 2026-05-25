@@ -18,10 +18,8 @@
 
 import marimo
 
-__generated_with = "0.23.6"
+__generated_with = "0.23.8"
 app = marimo.App(width="medium")
-_ECA_COLUMNS = ["EMv", "EMh"]
-_HEADERLESS_COLUMNS = ["x", "y", "EMv", "EMh", "row"]
 
 
 @app.cell
@@ -49,16 +47,6 @@ def _(mo):
     through load summary, QC, RSSD metrics, exports, and plots.
 
     ---
-
-    ## How to run
-
-    ```bash
-    uv sync --locked --all-extras --dev
-    uv run marimo edit notebooks/rssd_demo.py   # interactive
-    uv run marimo run notebooks/rssd_demo.py    # read-only app
-    uv run marimo export html-wasm notebooks/rssd_demo.py -o site --mode run
-    python -m http.server --directory site   # preview WASM build locally
-    ```
     """)
     return
 
@@ -117,6 +105,9 @@ def _(crs_ctrl, mo, np, survey_upload):
 
     from rssdpy.io.loaders import validate_canonical_survey
 
+    eca_columns = ["EMv", "EMh"]
+    headerless_columns = ["x", "y", "EMv", "EMh", "row"]
+
     mo.stop(
         not survey_upload.value,
         mo.md("**Upload a survey file** (.csv or `.txt`) to continue."),
@@ -132,23 +123,30 @@ def _(crs_ctrl, mo, np, survey_upload):
         raise ValueError(f"Unsupported file {upload_name!r}. Supported extensions: .csv, .txt")
 
     buffer = io.BytesIO(upload_bytes)
+    required = {"x", "y", *eca_columns}
     if suffix == "txt":
         raw = pd.read_csv(
             buffer,
-            sep=r"\s+",
             header=None,
-            names=_HEADERLESS_COLUMNS,
-            engine="python",
+            names=headerless_columns,
         )
+        if raw[eca_columns].isna().all().all():
+            buffer.seek(0)
+            raw = pd.read_csv(
+                buffer,
+                sep=r"\s+",
+                header=None,
+                names=headerless_columns,
+                engine="python",
+            )
     else:
         raw = pd.read_csv(buffer)
-        required = {"x", "y", *_ECA_COLUMNS}
         if not required.issubset(raw.columns):
             buffer.seek(0)
             raw = pd.read_csv(
                 buffer,
                 header=None,
-                names=_HEADERLESS_COLUMNS,
+                names=headerless_columns,
             )
 
     if "site_id" not in raw.columns:
@@ -157,11 +155,11 @@ def _(crs_ctrl, mo, np, survey_upload):
     crs = crs_ctrl.value.strip()
     canonical = validate_canonical_survey(
         raw,
-        eca_columns=_ECA_COLUMNS,
+        eca_columns=eca_columns,
         crs=crs,
         require_projected_crs=True,
     )
-    eca = canonical[_ECA_COLUMNS].copy()
+    eca = canonical[eca_columns].copy()
     coords = canonical[["x", "y"]].to_numpy(dtype=float)
     meta: dict[str, str | int | None] = {
         "source_filename": upload_name,
