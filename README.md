@@ -49,7 +49,7 @@ RSSDpy uses a single tabular schema loaded from **CSV** or whitespace-delimited 
 |--------|--------|
 | `site_id` | Stable integer site identifier |
 | `x`, `y` | Projected coordinates (metres) |
-| `EMh`, `EMv` (or your channel names) | Positive ECa in dS/m |
+| `EMh`, `EMv` (or your channel names) | Positive ECa in mS/m |
 | `row` | Optional; transect surveys only |
 
 Legacy ESAP files (`.svy`, `.pro`) are not required at runtime; use them only for
@@ -72,7 +72,7 @@ eca, coords, _meta = read_em_survey(
     eca_columns=["EMv", "EMh"],
     has_header=False,
     column_names=["site_id", "x", "y", "EMv", "EMh", "row"],
-    crs="EPSG:32611",
+    crs="EPSG:6339",
     require_projected_crs=True,
 )
 
