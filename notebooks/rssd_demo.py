@@ -53,13 +53,11 @@ def _(mo):
 
 @app.cell
 def _():
-    import contextily as ctx_basemap
-    import geopandas as gpd
     import matplotlib.pyplot as plt_mpl
     import numpy as np
 
     n_components = 2
-    return ctx_basemap, gpd, n_components, np, plt_mpl
+    return n_components, np, plt_mpl
 
 
 @app.cell
@@ -324,8 +322,6 @@ def _(coords_clean, design, mo, result, upload_name):
 def _(
     coords,
     crs,
-    ctx_basemap,
-    gpd,
     mo,
     np,
     original_idx,
@@ -333,6 +329,22 @@ def _(
     qc,
     result,
 ):
+    try:
+        import contextily as ctx_basemap
+        import geopandas as gpd
+    except ImportError:
+        mo.md(
+            """
+            ### Map
+
+            Map rendering is unavailable in this deployment environment.
+            Upload, QC, RSSD selection, CSV export, and PC scatter remain available.
+            For full basemap support, run locally with:
+            `uv run marimo run notebooks/rssd_demo.py`.
+            """
+        )
+        return
+
     n_total = len(coords)
     site_ids = np.arange(1, n_total + 1)
     selected_original_idx = result.selected_original_indices
