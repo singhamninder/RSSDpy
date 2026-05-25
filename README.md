@@ -114,19 +114,23 @@ print(f"Field-average ECe estimate: {np.exp(predictions.field_mean):.2f} dS/m")
 
 ## Interactive demo notebook
 
-A Marimo notebook walks through the RSSD workflow on a bundled example transect:
+A Marimo app walks through the RSSD workflow: upload a survey file, set EPSG and
+sample size, run ESAP-style QC and RSSD, then download selected sites and review plots.
 
-1. Load survey data and review EM statistics (adjust EPSG if needed)
-2. Choose the number of calibration sites
-3. Run ESAP-style QC and RSSD site selection
-4. Export results and view map / PC diagnostics
+1. Upload `.csv` or `.txt` survey (canonical columns: `x`, `y`, `EMv`, `EMh`; optional `row`)
+2. Set projected EPSG, calibration site count, and D-Factor (default 1.0)
+3. Run ESAP σ validation and RSSD site selection
+4. Download selected sites CSV and view map / PC diagnostics
+
+### Run locally (full features)
+
+Geospatial basemap plots (`geopandas`, `contextily`) work reliably in local Marimo:
 
 ```bash
 uv sync --locked --all-extras --dev
 uv run marimo edit notebooks/rssd_demo.py   # interactive (browser)
 uv run marimo run notebooks/rssd_demo.py    # read-only app
 ```
-
 
 ## Development
 

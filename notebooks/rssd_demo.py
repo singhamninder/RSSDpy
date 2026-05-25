@@ -1,9 +1,27 @@
-"""RSSD demo — load an EMI survey, run ESAP-style RSSD, export and map selected sites."""
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "marimo>=0.23.3",
+#     "rssdpy",
+#     "geopandas>=1.0",
+#     "contextily>=1.6",
+#     "matplotlib>=3.9",
+#     "numpy>=2.0",
+#     "pandas>=2.2",
+#     "pyproj>=3.6",
+#     "scikit-learn>=1.5",
+#     "scipy>=1.14",
+#     "statsmodels>=0.14",
+# ]
+# ///
+"""RSSD demo — upload an EMI survey, run ESAP-style RSSD, export and map selected sites."""
 
 import marimo
 
-__generated_with = "0.23.8"
+__generated_with = "0.23.6"
 app = marimo.App(width="medium")
+_ECA_COLUMNS = ["EMv", "EMh"]
+_HEADERLESS_COLUMNS = ["x", "y", "EMv", "EMh", "row"]
 
 
 @app.cell
@@ -21,14 +39,14 @@ def _(mo):
     End-to-end **Response Surface Sampling Design** for a 2-signal EMI transect survey.
     This notebook follows the ESAP-RSSD workflow:
 
-    1. Load survey data (projected coordinates + EM channels)
+    1. Upload survey data (projected coordinates + EM channels)
     2. Natural-log transform, standardize, and PCA on ECa
     3. ESAP σ validation (mask > 3.5σ, delete outliers > 4.5σ)
     4. Match design levels in PC space and swap for spatial uniformity (AD)
-    5. Export selected calibration sites and review maps
+    5. Download selected calibration sites and review maps
 
-    Adjust the controls below (survey path, EPSG, sample size), then scroll through
-    interfaces for load summary, QC, RSSD metrics, exports, and plots.
+    Use the controls below (file upload, EPSG, sample size, D-Factor), then scroll
+    through load summary, QC, RSSD metrics, exports, and plots.
 
     ---
 
@@ -38,7 +56,8 @@ def _(mo):
     uv sync --locked --all-extras --dev
     uv run marimo edit notebooks/rssd_demo.py   # interactive
     uv run marimo run notebooks/rssd_demo.py    # read-only app
-    uv run marimo export html notebooks/rssd_demo.py -o notebooks/rssd_demo.html
+    uv run marimo export html-wasm notebooks/rssd_demo.py -o site --mode run
+    python -m http.server --directory site   # preview WASM build locally
     ```
     """)
     return
@@ -46,37 +65,21 @@ def _(mo):
 
 @app.cell
 def _():
-    from pathlib import Path
-
     import contextily as ctx_basemap
     import geopandas as gpd
     import matplotlib.pyplot as plt_mpl
     import numpy as np
 
-    repo_root = Path(__file__).resolve().parents[1]
-    default_survey_path = repo_root / "examples" / "data" / "field_10_6" / "101710A_for_esap.txt"
-
     n_components = 2
-    design_factor = 0.96
-    return (
-        Path,
-        ctx_basemap,
-        default_survey_path,
-        design_factor,
-        gpd,
-        n_components,
-        np,
-        plt_mpl,
-        repo_root,
-    )
+    return ctx_basemap, gpd, n_components, np, plt_mpl
 
 
 @app.cell
-def _(default_survey_path, mo):
-    survey_path_ctrl = mo.ui.text(
-        value=str(default_survey_path),
-        label="Survey file path",
-        full_width=True,
+def _(mo):
+    survey_upload = mo.ui.file(
+        filetypes=[".csv", ".txt"],
+        kind="area",
+        label="Upload survey (.csv or .txt)",
     )
     crs_ctrl = mo.ui.text(value="EPSG:6339", label="EPSG code")
     target_size_ctrl = mo.ui.number(
@@ -86,34 +89,86 @@ def _(default_survey_path, mo):
         step=1,
         label="Calibration sites (n)",
     )
+    design_factor_ctrl = mo.ui.number(
+        start=0.9,
+        stop=1.1,
+        value=1.0,
+        step=0.01,
+        label="Design factor (D-Factor)",
+    )
 
     mo.vstack(
         [
             mo.md("### Settings"),
-            survey_path_ctrl,
+            survey_upload,
             crs_ctrl,
             target_size_ctrl,
+            design_factor_ctrl,
         ]
     )
-    return crs_ctrl, survey_path_ctrl, target_size_ctrl
+    return crs_ctrl, design_factor_ctrl, survey_upload, target_size_ctrl
 
 
 @app.cell
-def _(Path, crs_ctrl, mo, np, survey_path_ctrl):
-    from rssdpy.io import read_em_survey
+def _(crs_ctrl, mo, np, survey_upload):
+    import io
 
-    survey_path = Path(survey_path_ctrl.value)
+    import pandas as pd
+
+    from rssdpy.io.loaders import validate_canonical_survey
+
+    mo.stop(
+        not survey_upload.value,
+        mo.md("**Upload a survey file** (.csv or `.txt`) to continue."),
+    )
+
+    upload_name = survey_upload.name()
+    upload_bytes = survey_upload.contents()
+    if upload_name is None or upload_bytes is None:
+        mo.stop(True, mo.md("**Upload failed** — try uploading the file again."))
+
+    suffix = upload_name.lower().rsplit(".", maxsplit=1)[-1]
+    if suffix not in {"csv", "txt"}:
+        raise ValueError(f"Unsupported file {upload_name!r}. Supported extensions: .csv, .txt")
+
+    buffer = io.BytesIO(upload_bytes)
+    if suffix == "txt":
+        raw = pd.read_csv(
+            buffer,
+            sep=r"\s+",
+            header=None,
+            names=_HEADERLESS_COLUMNS,
+            engine="python",
+        )
+    else:
+        raw = pd.read_csv(buffer)
+        required = {"x", "y", *_ECA_COLUMNS}
+        if not required.issubset(raw.columns):
+            buffer.seek(0)
+            raw = pd.read_csv(
+                buffer,
+                header=None,
+                names=_HEADERLESS_COLUMNS,
+            )
+
+    if "site_id" not in raw.columns:
+        raw.insert(0, "site_id", np.arange(1, len(raw) + 1))
+
     crs = crs_ctrl.value.strip()
-
-    eca, coords, meta = read_em_survey(
-        survey_path,
-        eca_columns=["EMv", "EMh"],
-        delimiter=",",
-        has_header=False,
-        column_names=["x", "y", "EMv", "EMh", "row"],
+    canonical = validate_canonical_survey(
+        raw,
+        eca_columns=_ECA_COLUMNS,
         crs=crs,
         require_projected_crs=True,
     )
+    eca = canonical[_ECA_COLUMNS].copy()
+    coords = canonical[["x", "y"]].to_numpy(dtype=float)
+    meta: dict[str, str | int | None] = {
+        "source_filename": upload_name,
+        "extension": f".{suffix}",
+        "n_sites": int(len(canonical)),
+        "crs": crs,
+    }
 
     n_sites = len(eca)
     log_emv_mean = float(np.log(eca["EMv"]).mean())
@@ -129,7 +184,7 @@ def _(Path, crs_ctrl, mo, np, survey_path_ctrl):
 
                 | Metric | Value |
                 |--------|-------|
-                | Survey file | `{survey_path.name}` |
+                | Survey file | `{upload_name}` |
                 | CRS | {crs} |
                 | Sites loaded | {n_sites} |
                 | X range (m) | {x_min:.1f} – {x_max:.1f} |
@@ -143,7 +198,7 @@ def _(Path, crs_ctrl, mo, np, survey_path_ctrl):
             mo.ui.table(eca.describe().round(2)),
         ]
     )
-    return coords, crs, eca, survey_path
+    return coords, crs, eca, upload_name
 
 
 @app.cell
@@ -172,13 +227,13 @@ def _(eca, mo):
         | Sites after QC | {len(eca_clean)} |
         """
     )
-    return n_eligible, original_idx, qc, scores
+    return original_idx, qc, scores
 
 
 @app.cell
 def _(
     coords,
-    design_factor,
+    design_factor_ctrl,
     mo,
     n_components,
     original_idx,
@@ -189,6 +244,7 @@ def _(
     from rssdpy.sampling import esap_sample_plan, esap_sampling_design, run_rssd
 
     target_size = int(target_size_ctrl.value)
+    design_factor = float(design_factor_ctrl.value)
     coords_clean = coords[original_idx]
 
     plan = esap_sample_plan(
@@ -239,40 +295,27 @@ def _(
 
 
 @app.cell
-def _(coords_clean, design, mo, n_eligible, result, survey_path):
-    from rssdpy.io import (
-        export_selected_sites_csv,
-        selected_sites_table,
-        write_esap_style_report,
-    )
-
-    output_csv = survey_path.parent / "selected_sites.csv"
-    output_report = survey_path.parent / "rssd_report.txt"
+def _(coords_clean, design, mo, result, upload_name):
+    from rssdpy.io import selected_sites_table
 
     table_sorted = (
         selected_sites_table(result, coords_clean, design=design)
         .sort_values("selection_order")
         .reset_index(drop=True)
     )
-
-    export_selected_sites_csv(result, coords_clean, output_csv, design=design)
-    write_esap_style_report(
-        result,
-        output_report,
-        sample_size=len(result.selected_indices),
-        active_survey_size=n_eligible,
+    csv_bytes = table_sorted.to_csv(index=False).encode("utf-8")
+    stem = upload_name.rsplit(".", maxsplit=1)[0] if upload_name else "survey"
+    download_selected = mo.download(
+        data=csv_bytes,
+        filename=f"{stem}_selected_sites.csv",
+        mimetype="text/csv",
+        label="Download selected sites (CSV)",
     )
 
     mo.vstack(
         [
-            mo.md(
-                f"""
-                ### Selected calibration sites
-
-                - CSV: `{output_csv}`
-                - Report: `{output_report}`
-                """
-            ),
+            mo.md("### Selected calibration sites"),
+            download_selected,
             mo.ui.table(table_sorted),
         ]
     )
