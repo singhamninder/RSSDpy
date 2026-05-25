@@ -112,25 +112,36 @@ predictions = predict_salinity(best, scores_clean, coords_clean, cal_indices, ln
 print(f"Field-average ECe estimate: {np.exp(predictions.field_mean):.2f} dS/m")
 ```
 
-## Interactive demo notebook
+## Demo notebook (Jupyter)
 
-A Marimo app walks through the RSSD workflow: upload a survey file, set EPSG and
-sample size, run ESAP-style QC and RSSD, then download selected sites and review plots.
+The Jupyter demo walks through the RSSD workflow using local file paths and plain
+Python cells.
 
-1. Upload `.csv` or `.txt` survey (canonical columns: `x`, `y`, `EMv`, `EMh`; optional `row`)
-2. Set projected EPSG, calibration site count, and D-Factor (default 1.0)
-3. Run ESAP σ validation and RSSD site selection
-4. Download selected sites CSV and view map / PC diagnostics
+1. Open `notebooks/rssd_demo.ipynb`
+2. Edit the config cell (`survey_path`, `crs`, `target_size`, `design_factor`)
+3. Run cells top-to-bottom for load summary, ESAP QC, RSSD selection, CSV export,
+   map, and PC diagnostics
 
-### Run locally (full features)
-
-Geospatial basemap plots (`geopandas`, `contextily`) work reliably in local Marimo:
+### Run locally
 
 ```bash
 uv sync --locked --all-extras --dev
-uv run marimo edit notebooks/rssd_demo.py   # interactive (browser)
-uv run marimo run notebooks/rssd_demo.py    # read-only app
+uv run jupyter lab
 ```
+
+Then open `notebooks/rssd_demo.ipynb` in JupyterLab.
+
+### Share as HTML
+
+Use notebook HTML export when you want a portable artifact for stakeholder review.
+
+```bash
+uv sync --locked --all-extras --dev
+mkdir -p dist
+uv run jupyter nbconvert --to html notebooks/rssd_demo.ipynb --output-dir dist
+```
+
+Share the generated HTML file from `dist/`.
 
 ## Development
 

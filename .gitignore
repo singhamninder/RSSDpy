@@ -14,6 +14,5 @@ wheels/
 
 # Generated notebook exports
 notebooks/*.html
-notebooks/__marimo__/
 site/
 examples/data/selected_sites.csv

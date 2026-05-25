@@ -10,4 +10,4 @@ Coordinates in the bundled survey use **EPSG:6339** (NAD83(2011) / California zo
 US survey feet). Site IDs are assigned as row numbers (1..N) when loading via
 `read_em_survey`.
 
-Used by the demo notebook: [`notebooks/rssd_demo.py`](../../notebooks/rssd_demo.py).
+Used by the demo notebook: [`notebooks/rssd_demo.ipynb`](../../notebooks/rssd_demo.ipynb).
