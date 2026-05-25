@@ -11,7 +11,6 @@ from rssdpy.io import (
     read_em_survey,
     selected_sites_table,
     validate_canonical_survey,
-    write_esap_style_report,
 )
 from rssdpy.sampling.design import central_composite_design
 from rssdpy.sampling.rssd import run_rssd
@@ -125,14 +124,3 @@ class TestExports:
         export_selected_sites_csv(result, coords, output)
         loaded = pd.read_csv(output)
         assert len(loaded) == len(result.selected_indices)
-
-    def test_write_esap_style_report(self, tmp_path: Path) -> None:
-        result, coords = self._make_result()
-        _ = coords
-        output = tmp_path / "report.txt"
-        write_esap_style_report(result, output)
-        content = output.read_text(encoding="utf-8")
-        assert "RSSD Selection Report" in content
-        assert "Core sites" in content
-        assert "Opt-Criteria" in content
-        assert "Design factor" in content

@@ -1,0 +1,13 @@
+RSSD Selection Report
+Sample size: 12
+Active survey size: 5029
+Core sites: 10
+Support sites: 2
+Design factor (D-Factor): 0.96
+Opt-Criteria: 1.290
+AD initial (m): 81.312838
+AD final (m): 71.668271
+Swaps accepted: 6
+
+Selected original indices:
+2402, 2294, 5063, 434, 3732, 153, 4616, 2225, 3939, 682, 622, 4275
