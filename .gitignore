@@ -13,6 +13,5 @@ wheels/
 .cursor/
 
 # Generated notebook exports
-notebooks/*.html
-site/
-examples/data/selected_sites.csv
+
+notebooks/artifacts/
