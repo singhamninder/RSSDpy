@@ -9,7 +9,17 @@ description = "Response Surface Sampling Design (RSSD) for ECa-directed soil sal
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
+authors = [{ name = "Amninder Singh", email = "asing075@ucr.edu" }]
 keywords = ["soil salinity", "EMI", "sampling design", "RSSD", "ESAP", "precision agriculture"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: GIS",
+]
 dependencies = [
     "matplotlib>=3.9",
     "numpy>=2.0",
@@ -20,23 +30,35 @@ dependencies = [
     "statsmodels>=0.14",
 ]
 
+[project.urls]
+Homepage = "https://github.com/singhamninder/RSSDpy"
+Repository = "https://github.com/singhamninder/RSSDpy"
+Issues = "https://github.com/singhamninder/RSSDpy/issues"
+
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.3",
-    "pytest-cov>=6.0",
-    "pre-commit>=4.0",
-    "ruff>=0.9",
-    "ty>=0.0.1a14",
-    "hatchling>=1.25",
-]
 notebook = [
     "geopandas>=1.0",
     "contextily>=1.6",
     "ipykernel>=7.2.0",
 ]
+app = [
+    "streamlit>=1.40",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rssdpy"]
+
+[tool.hatch.build.targets.sdist]
+# Keep the sdist to the package + tests (+ the fixture data tests/test_esap_parity.py
+# needs to run standalone) + top-level docs; exclude dev-tool config and notebooks.
+include = [
+    "src/rssdpy",
+    "tests",
+    "examples/data",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -64,6 +86,13 @@ ignore = ["PD101"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["rssdpy"]
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+# Publish-only: never used for dependency resolution during `uv sync`/`uv lock`.
+explicit = true
 
 [dependency-groups]
 dev = [

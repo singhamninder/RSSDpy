@@ -1,1 +1,5 @@
-__version__ = "0.1.0"
+"""Version comes from installed metadata; ``pyproject.toml`` is the single source of truth."""
+
+from importlib.metadata import version
+
+__version__ = version("rssdpy")

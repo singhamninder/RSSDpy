@@ -10,8 +10,13 @@ wheels/
 .venv
 
 .DS_Store
-.cursor/
 
 # Generated notebook exports
 
 notebooks/artifacts/
+
+# Copyrighted reference PDFs (not for redistribution)
+docs/theory/refs/
+
+# Test artifacts
+.coverage
