@@ -6,7 +6,13 @@ import pytest
 
 from rssdpy.sampling.design import ESAP_RADIUS_SQUARED, central_composite_design, esap_sample_plan
 from rssdpy.sampling.rssd import RSSDesign, run_rssd
-from rssdpy.sampling.uniformity import average_distance, opt_criteria_from_ad
+from rssdpy.sampling.uniformity import (
+    average_distance,
+    characteristic_spacing,
+    compute_opt_criteria,
+    opt_criteria_esap,
+    opt_criteria_from_ad,
+)
 
 
 class TestCentralCompositeDesign:
@@ -263,3 +269,51 @@ class TestRunRSSD:
         result = run_rssd(scores, synthetic_coords, design, n_extra=4)
         assert len(result.selected_indices) == len(design) + 4
         assert result.ad_final > 0
+
+
+class TestCharacteristicSpacing:
+    def test_basic_value(self) -> None:
+        coords = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
+        # area=100, N=4 -> spacing = sqrt(100/4) = 5.0
+        assert characteristic_spacing(coords) == pytest.approx(5.0)
+
+    def test_single_site_raises(self) -> None:
+        with pytest.raises(ValueError, match="at least 2 sites"):
+            characteristic_spacing(np.array([[0.0, 0.0]]))
+
+
+class TestOptCriteriaEsap:
+    def test_basic_value(self) -> None:
+        coords = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
+        opt = opt_criteria_esap(ad=2.0, coords=coords, n_cal=4)
+        expected = 3.0 * 2.0 / (5.0 * np.sqrt(4 / 4))
+        assert opt == pytest.approx(expected)
+
+    def test_zero_n_cal_raises(self) -> None:
+        coords = np.array([[0.0, 0.0], [10.0, 0.0]])
+        with pytest.raises(ValueError, match="n_cal must be"):
+            opt_criteria_esap(ad=1.0, coords=coords, n_cal=0)
+
+    def test_n_cal_exceeds_survey_raises(self) -> None:
+        coords = np.array([[0.0, 0.0], [10.0, 0.0]])
+        with pytest.raises(ValueError, match="exceeds survey size"):
+            opt_criteria_esap(ad=1.0, coords=coords, n_cal=5)
+
+
+class TestComputeOptCriteria:
+    def test_derived_mode_matches_opt_criteria_from_ad(self) -> None:
+        coords = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
+        assert compute_opt_criteria(2.0, coords, n_cal=4, mode="derived") == pytest.approx(
+            opt_criteria_from_ad(2.0, coords)
+        )
+
+    def test_esap_mode_matches_opt_criteria_esap(self) -> None:
+        coords = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
+        assert compute_opt_criteria(2.0, coords, n_cal=4, mode="esap") == pytest.approx(
+            opt_criteria_esap(2.0, coords, n_cal=4)
+        )
+
+    def test_invalid_mode_raises(self) -> None:
+        coords = np.array([[0.0, 0.0], [10.0, 0.0]])
+        with pytest.raises(ValueError, match="opt_criteria mode"):
+            compute_opt_criteria(1.0, coords, n_cal=2, mode="bogus")

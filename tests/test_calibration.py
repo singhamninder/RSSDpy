@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from rssdpy.calibration.diagnostics import DiagnosticsResult, run_diagnostics
+from rssdpy.calibration.dppc import dppc_eca
 from rssdpy.calibration.mlr import (
     MLRResult,
     _build_model_matrix,
@@ -355,3 +356,34 @@ class TestPredictSalinity:
         pred = predict_salinity(models[0], scores, synthetic_coords, cal_idx_fixed, synthetic_ece)
         assert pred.pred_ln_ece.shape[0] == len(synthetic_eca_df) - 16
         assert np.isfinite(pred.field_mean)
+
+
+class TestDppcEca:
+    def test_known_value(self) -> None:
+        """Golden value from the documented two-pathway formula (Rhoades 1989 Eq. 6)."""
+        result = dppc_eca(
+            ece=np.array([10.0]),
+            theta_w=np.array([0.3]),
+            sp=np.array([0.5]),
+            theta_ws=np.array([0.1]),
+            ecs=0.023,
+        )
+        assert result[0] == pytest.approx(1.0007654929108698, rel=1e-10)
+
+    def test_theta_ws_exceeds_theta_w_raises(self) -> None:
+        with pytest.raises(ValueError, match="theta_ws must be"):
+            dppc_eca(
+                ece=np.array([10.0]),
+                theta_w=np.array([0.1]),
+                sp=np.array([0.5]),
+                theta_ws=np.array([0.3]),
+            )
+
+    def test_mismatched_shapes_raise(self) -> None:
+        with pytest.raises(ValueError, match="same shape"):
+            dppc_eca(
+                ece=np.array([10.0, 12.0]),
+                theta_w=np.array([0.3]),
+                sp=np.array([0.5]),
+                theta_ws=np.array([0.1]),
+            )

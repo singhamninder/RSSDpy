@@ -7,6 +7,7 @@ import pytest
 from rssdpy.features.outliers import (
     detect_outliers,
     detect_outliers_esap,
+    iterative_esap_validation,
     outlier_threshold,
     pc_distances,
 )
@@ -172,3 +173,24 @@ class TestESAPOutlierDetection:
     def test_pc_distances_matches_manual(self) -> None:
         scores = np.array([[3.0, 4.0]])
         np.testing.assert_allclose(pc_distances(scores), [5.0])
+
+
+class TestIterativeESAPValidation:
+    def test_converges_and_removes_outliers(self, synthetic_eca_df: pd.DataFrame) -> None:
+        pca = ECaPCA(n_components=2)
+        eca_clean, scores, qc, original_indices = iterative_esap_validation(synthetic_eca_df, pca)
+        assert not qc.outlier_mask.any()
+        assert len(eca_clean) == len(scores) == len(original_indices)
+        assert len(eca_clean) <= len(synthetic_eca_df)
+
+    def test_all_sites_removed_raises(self, synthetic_eca_df: pd.DataFrame) -> None:
+        pca = ECaPCA(n_components=2)
+        with pytest.raises(ValueError, match="All survey sites were removed"):
+            iterative_esap_validation(synthetic_eca_df, pca, masking_std=0.01, outlier_std=0.01)
+
+    def test_non_convergence_raises_runtime_error(self, synthetic_eca_df: pd.DataFrame) -> None:
+        pca = ECaPCA(n_components=2)
+        with pytest.raises(RuntimeError, match="did not converge"):
+            iterative_esap_validation(
+                synthetic_eca_df, pca, masking_std=1.0, outlier_std=1.0, max_iterations=1
+            )
