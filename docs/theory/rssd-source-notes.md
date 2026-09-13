@@ -120,13 +120,29 @@ for the design, not a chi-square probability statement in 3D.
 | For each design level try ψ₂ replacement; keep if AD decreases | Confirmed | `[P2]` | |
 | For each design level try ψ₃ replacement; keep if AD decreases | Confirmed | `[P2]` | |
 | Iterate swaps until convergence (no AD reduction) | Confirmed | `[P2]` | |
-| Add extra sites greedily (maximise AD reduction) up to target n₀ | Confirmed | `[P2]` | |
-| Extra-site pool is the 8 cube design levels using remaining N − n₀ sites | Confirmed | `[P2]` | For monitoring/validation sites |
+| Add extra sites greedily (maximise AD reduction) up to target n₀, over ALL remaining sites | Confirmed | `[P2]` steps 6–7 (p. 481) | NOT restricted to cube levels — see correction note below |
+| Separate validation/monitoring pass, restricted to cube design levels only | Confirmed | `[P2]` p. 481–482 | Distinct second pass on the N − n₀ remaining sites, run AFTER the core calibration set is finalised; not part of reaching n₀ |
 | AD is theoretically minimised by equilateral triangular grid spacing | Confirmed | `[P2]` (cites McBratney et al. 1981) | Theoretical lower bound |
 | ESAP Opt-Criteria is a dimensionless uniformity index | Confirmed | `[ESAP]` manual §3.5.2 | Lower is better; ≤1.30 “reasonable” on rectangular fields |
 | `opt_criteria ≈ AD / characteristic_spacing` | Derived | Extension | Cross-field normalisation |
 | `opt_criteria_esap ≈ 3 × AD / (spacing × sqrt(N / n_cal))` | Derived | Calibrated vs `106Frsd1.txt` | ESAP desktop parity |
 | `characteristic_spacing = sqrt(bbox_area / N)` | Derived | Extension | Metres; normalises AD across field sizes |
+
+### Correction note (2026-09): `extra_mode` default
+
+Earlier documentation (README, demo notebook, `esap-modernization.mdc`) recommended
+`extra_mode="cube"` when extending the core calibration set to the target sample size, on the
+assumption this matched ESAP's "support site" behaviour. Re-reading `[P2]` p. 481 shows this is
+wrong: steps 6–7 search **all** N − n remaining survey sites (no cube restriction) when adding
+sites beyond the 14 (or 10, for the 2-signal template) core design-level matches. The cube
+restriction in `[P2]` applies only to the *separate* validation/monitoring pass (p. 481–482),
+implemented here via `run_rssd(..., n_validation=...)`.
+
+Empirical confirmation against the Field 10-6 reference (`examples/data/106Frsd1_expected.txt`,
+n=12, D=0.96): `extra_mode="global"` gives AD=67.4 m and Opt-Criteria=1.21, both better than
+ESAP's own AD=70.3 m / Opt=1.26, with the same 6/12 exact site-ID overlap as `"cube"` (which gives
+AD=71.7 m). `run_rssd`'s code default was already `extra_mode="global"`; only the *documentation*
+steered users to `"cube"`. Fixed throughout README, notebook, and `.cursor/rules/`.
 
 ---
 
@@ -183,6 +199,23 @@ These are clearly labelled extensions that may be implemented in later phases:
 | Kriging on MLR residuals / kriging with external drift | Geostatistical extension | `[P1]` (contrast case) |
 | Multi-sensor fusion (EM + gamma-ray + L-band) | SDSampling | `[SDK24]` |
 
+### Method comparison: `[SDK24]` Colab notebook vs RSSDpy
+
+`[SDK24]`'s public Colab notebook (`SensorDirected_Sampling.ipynb`, not the thesis text itself)
+shares RSSDpy's high-level skeleton — scale, PCA, CCD-shaped targets in PC space, nearest
+candidates per target, then a spatial-uniformity objective — but is a **different algorithm**,
+not an alternate implementation of the same one. No 1:1 numerical parity is expected between them.
+
+| Stage | `[SDK24]` notebook | RSSDpy |
+|---|---|---|
+| Transform | none; user-selected Standard/Robust/PowerTransformer on raw features | `ln(ECa)` then centre/scale (`[P2]`) |
+| PC scores | raw `sklearn` scores | divided by `sqrt(eigenvalue)` (`[P2]`, `[L05]`) |
+| QC | IQR / Mahalanobis (χ²) / EllipticEnvelope, user-selected | ESAP 3.5σ mask / 4.5σ delete, iterative (`[ESAP]`) |
+| Design | `pyDOE3.ccdesign(2, center=(1,1), alpha='o')` (α=√2), min-max rescaled to the data's 5th–95th percentiles, with centre replicates and halved sub-designs for n ∈ {5,10,12,15,20} | fixed template in standardised PC units (±0.75/±1.75/±2.5 × D-factor for 2 signals; radius² 3.84 CCD for 3+) |
+| Candidate uniqueness | closest-design-point wins ties | sequential per design level (`[P2]`) |
+| Site-selection objective | random search over ≤33% of candidate combinations (fixed seed) maximising a weighted score of PC-space miss vs geographic separation | deterministic swap loop minimising AD (`[P2]`) |
+| Extras | optional preferred/inference points via kriging; optional Moran's I variant objective | greedy global AD-minimising additions (`[P2]` steps 6–7) or cube-restricted validation pass |
+
 ---
 
 ## 11. RSSD workflow parity contract
@@ -197,8 +230,8 @@ Each item is labelled as **Confirmed** parity behavior or **Extension**.
 | Global uniqueness of candidate assignments | Confirmed | A site cannot appear in more than one design-level candidate set. |
 | Initial assignment | Confirmed | Core set starts from the `ψ1` match for each design level. |
 | Swapping loop | Confirmed | Trial `ψ2`, then `ψ3`, retain only if AD decreases; stop when no improvement. |
-| Extra-site selection (`extra_mode="global"`) | Extension | Greedy AD reduction over all remaining survey sites. |
-| Extra-site selection (`extra_mode="cube"`) | Confirmed | Extra candidates are constrained by remaining cube-level matches. |
+| Extra-site selection (`extra_mode="global"`) | Confirmed | `[P2]` steps 6–7: default; greedy AD reduction over ALL remaining survey sites. Extends the core calibration set to the target n₀. |
+| Extra-site selection (`extra_mode="cube"`) | Confirmed for `n_validation`; Extension if used for `n_extra` | `[P2]` restricts to cube levels only for the SEPARATE validation/monitoring pass, not for extending the core calibration set. |
 | Validation/monitoring pass | Confirmed | Optional second RSSD pass on remaining sites using cube levels only. |
 | Original index mapping | Extension | Output includes filtered and original indices to avoid ID drift. |
 | Export compatibility | Extension | Field-ready outputs use CSV, optional ESAP-like text summary. |
@@ -227,3 +260,46 @@ Each item is labelled as **Confirmed** parity behavior or **Extension**.
 
 Legacy `.svy` / `.pro` files are **not** required for RSSD; they remain useful as
 regression references when validating against ESAP desktop output.
+
+---
+
+## 13. PCA sign convention
+
+PCA eigenvector sign is mathematically arbitrary (`v` and `-v` are both valid eigenvectors) and,
+because the CCD/2-signal design templates are symmetric under axis sign flips, it has **no effect**
+on candidate pools, the swap loop, the final selected sites, AD, or Opt-Criteria — verified
+empirically on Field 10-6 (identical selected-site set with PC2 sign flipped or not).
+
+`ECaPCA` fixes the sign of each component so its loading on the *first* ECa column is
+non-negative (flip the component, its scores, and its eigenvector column together if not).
+This is a **Derived/cosmetic** convention, not an ESAP rule — chosen only so exported PC scores
+and diagnostic plots read the same sign as ESAP's printed Ds-STD columns for the two-channel
+Field 10-6 reference. It has no bearing on correctness of site selection.
+
+---
+
+## 14. ESAP Field 10-6 parity status (measured, HEAD)
+
+Regression fixture: `examples/data/101710A_for_esap.txt` (bundled) vs
+`examples/data/106Frsd1_expected.txt` / `106Finfo_reference.txt` (ESAP desktop output,
+`tests/test_esap_parity.py`).
+
+| Stage | Result | Status |
+|---|---|---|
+| ln-signal mean/std/corr | 5.693/0.372, 5.522/0.452, r=0.9827 vs ESAP 5.693/0.372, 5.521/0.452, r=0.9828 | Match to 3 d.p. |
+| ESAP σ QC counts | 72 masked, 1 deleted, 5029 eligible | Exact match |
+| Standardised PC scores at all 12 reference sites | within 0.01 (sign-corrected) | Match |
+| ESAP's 10 core picks vs our ψ₁–ψ₃ pools | all 10 present, rank ≤ 2 of 3 | Match |
+| Core-10 swap-loop optimum (brute force over 3¹⁰ combos) | our swap loop finds the AD-global-optimum (75.22 m); ESAP's own core-10 ranks 175th (76.43 m) | Ours is AD-superior |
+| Full 12-site AD / Opt-Criteria, `extra_mode="global"` | 67.4 m / 1.21 vs ESAP 70.3 m / 1.26 | Ours is AD-superior |
+| Exact site-ID overlap | 6/12 | Not exact — acceptable per AD-dominance criterion (§ below), root cause is a different (non-worse) swap/greedy path, not an algorithm error |
+
+**Acceptance criterion used in `tests/test_esap_parity.py`:** stage-wise parity (rows 1–4 above,
+exact) **and** AD dominance (our AD ≤ ESAP's AD, our Opt-Criteria ≤ ESAP's × 1.02) **and** ≥ 6/12
+exact site-ID overlap — not exact 12/12 IDs, since ESAP's proprietary swap/greedy tie-breaking
+order is not published and the two 1995 papers describe the algorithm (steps, not exact
+tie-breaks).
+
+**Known open discrepancy:** the bundled survey file has 5102 rows; ESAP's `106Finfo_reference.txt`
+reports `Survey Size: 5101`. No blank or duplicate trailing row was found in the bundled file, so
+the one-row difference is unresolved (documented here rather than silently patched).

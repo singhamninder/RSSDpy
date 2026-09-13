@@ -49,58 +49,44 @@ RSSDpy uses a single tabular schema loaded from **CSV** or whitespace-delimited 
 |--------|--------|
 | `site_id` | Stable integer site identifier |
 | `x`, `y` | Projected coordinates (metres) |
-| `EMh`, `EMv` (or your channel names) | Positive ECa in mS/m |
+| `EMh`, `EMv` (or your channel names) | Positive ECa in dS/m |
 | `row` | Optional; transect surveys only |
 
 Legacy ESAP files (`.svy`, `.pro`) are not required at runtime; use them only for
 regression checks against desktop ESAP output. Convert vendor exports to CSV or TXT
 before loading.
 
+The core algorithm (log-transform, centre/scale, PCA) is unit-invariant — it only requires
+ECa values to be positive and in a single consistent unit throughout a survey. dS/m matches
+the ESAP desktop software and the bundled example data.
+
 ## Quick start
 
 ```python
-import numpy as np
-from rssdpy.features import ECaPCA, detect_outliers_esap, iterative_esap_validation
+from rssdpy import run_esap_rssd
 from rssdpy.io import export_selected_sites_csv, read_em_survey
-from rssdpy.sampling import esap_sample_plan, central_composite_design, run_rssd
-from rssdpy.calibration import fit_mlr_models
-from rssdpy.predict import predict_salinity
 
-# 1. Parse raw EM survey (ESAP transect example: site_id, x, y, EMv, EMh, row)
+# 1. Parse raw EM survey (ESAP transect example: x, y, EMv, EMh, row; no site_id
+#    column in the file itself — read_em_survey assigns 1..N automatically).
+#    Set delimiter to match your file; ".txt" defaults to whitespace-delimited.
 eca, coords, _meta = read_em_survey(
     "survey.txt",
     eca_columns=["EMv", "EMh"],
+    delimiter=",",
     has_header=False,
-    column_names=["site_id", "x", "y", "EMv", "EMh", "row"],
+    column_names=["x", "y", "EMv", "EMh", "row"],
     crs="EPSG:6339",
     require_projected_crs=True,
 )
 
-# 2. PCA + ESAP σ validation (mask 3.5σ, delete outliers > 4.5σ)
-pca = ECaPCA(n_components=2)
-eca_clean, scores, qc, original_idx = iterative_esap_validation(eca, pca)
-coords_clean = coords[original_idx]
+# 2. Full ESAP-RSSD workflow: sigma QC (mask 3.5σ, delete > 4.5σ), 2-signal SRS
+#    design (n=12, D-Factor 1), swap loop + global greedy extras (Lesch et al.
+#    1995 Paper 2 steps 6-7 — see docs/theory/rssd-source-notes.md).
+run = run_esap_rssd(eca, coords, n_components=2, target_size=12, design_factor=1.0)
 
-# 3. ESAP-style SRS design (n=12, D-Factor 1)
-design_factor = 1
-plan = esap_sample_plan(n_components=2, target_size=12, design_factor=design_factor)
-design = central_composite_design(
-    n_components=2, include_center=False, design_factor=design_factor
-)
-result = run_rssd(
-    scores,
-    coords_clean,
-    design,
-    n_extra=plan.n_extra,
-    extra_mode="cube",
-    eligible_mask=qc.eligible_mask,
-    original_indices=original_idx,
-    design_factor=design_factor,
-)
-print(f"Selected {len(result.selected_indices)} sites")
-print(f"Opt-Criteria = {result.opt_criteria:.3f}  (AD = {result.ad_final:.1f} m)")
-export_selected_sites_csv(result, coords_clean, "selected_sites.csv", design=design)
-
+print(f"Selected {len(run.rssd.selected_indices)} sites")
+print(f"Opt-Criteria = {run.rssd.opt_criteria:.3f}  (AD = {run.rssd.ad_final:.1f} m)")
+export_selected_sites_csv(run.rssd, run.coords_clean, "selected_sites.csv", design=run.design)
 ```
 
 ## Demo notebook (Jupyter)
@@ -140,4 +126,3 @@ uv run pytest
 - Corwin, D.L. and Lesch, S.M. (2005). Characterizing Soil Spatial Variability with
   Apparent Soil Electrical Conductivity. *Computers and Electronics in Agriculture*,
   46, 103–133.
-
