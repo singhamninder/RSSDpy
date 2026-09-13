@@ -1,0 +1,233 @@
+---
+description: Project overview, architecture, domain algorithms, and source-truth policy for RSSDpy
+alwaysApply: true
+---
+
+## Tooling Priority
+
+Global user rules (uv, ruff, ty, pytest) take precedence over any project-specific tooling preference.
+Run: `uv sync --locked --all-extras --dev && uv run ruff format . && uv run ruff check --fix . && uv run ty check . && uv run pytest`
+
+---
+
+## Project Context
+
+A Python library implementing Response Surface Sampling Design (RSSD) for ECa-directed soil
+salinity sampling, based on Lesch et al. (1995) and the ESAP-RSSD software methodology.
+Target audience: geospatial data scientists working with EMI (EM-38, DUALEM) survey data
+for precision agriculture.
+
+---
+
+## Source-Truth Policy
+
+Every theory claim, formula, or constant in source code must be labeled as one of:
+
+- **Confirmed** — directly supported by a primary or authoritative source (see References).
+- **Derived** — mathematically derived from confirmed claims (e.g., standardized PCA score
+  variance, OLS prediction variance formula).
+- **Extension** — generalizations not guaranteed to reproduce original ESAP behavior (e.g.,
+  3- or 4-component CCD variants beyond the 2-component ESAP base, simulated annealing,
+  cLHS, SDSampling-style weighted feature/geo tradeoffs, kriging on MLR predictions).
+
+**Important constant note:** The value `3.84` used in the CC design radius is the ESAP/Lesch
+design constant. It equals `scipy.stats.chi2.ppf(0.95, df=1)` (one degree of freedom) and
+also `1.96**2`. It must NOT be labeled as `chi2.ppf(0.95, df=3)`, which is ≈7.815.
+The 3D chi-square 95% quantile does not produce 3.84. Document the actual source origin
+in `docs/theory/rssd-source-notes.md` before using the constant in code.
+
+---
+
+## Architecture & Module Layout
+
+```
+rssdpy/
+├── pyproject.toml
+├── uv.lock
+├── README.md
+├── LICENSE
+├── docs/theory/rssd-source-notes.md   # source-truth register
+├── .venv/
+├── src/
+│   └── rssdpy/
+│       ├── __init__.py
+│       ├── _version.py
+│       ├── sampling/
+│       │   ├── __init__.py
+│       │   ├── design.py       # CC designs, ellipsoid levels
+│       │   ├── rssd.py         # full RSSD pipeline (ψ1–ψ3, swaps, extras)
+│       │   └── uniformity.py   # AD metric, KDTree plumbing
+│       ├── features/
+│       │   ├── __init__.py
+│       │   ├── pca.py          # log-ECa transform, scaling, PCA
+│       │   └── outliers.py     # Mahalanobis distance, PC-based QC
+│       ├── calibration/
+│       │   ├── __init__.py
+│       │   ├── mlr.py          # model spec, PRESS/APVE search
+│       │   ├── dppc.py         # optional DPPC utilities (Extension)
+│       │   └── diagnostics.py  # Moran's I, lack-of-fit, residual tests
+│       ├── predict/
+│       │   ├── __init__.py
+│       │   └── salinity.py     # predictions, variance, probabilities
+│       ├── io/
+│       │   ├── __init__.py
+│       │   ├── loaders.py      # read_em_survey, validate_canonical_survey
+│       │   └── exports.py      # selected_sites_table, CSV/GeoPackage export
+│       └── viz/
+│           ├── __init__.py
+│           └── plots.py        # PC scatter, residual plots (non-core)
+└── tests/
+    ├── conftest.py
+    ├── test_features.py
+    ├── test_sampling.py
+    └── test_calibration.py
+```
+
+---
+
+## Core Algorithms
+
+### 1. PCA on ECa Data (`features/pca.py`) — Confirmed
+
+- Accept DataFrame with columns for each ECa reading (e.g., EMh, EMv).
+- Validate all values are positive floats (ECa in dS/m).
+- Log-transform FIRST: `np.log(eca_df)` (natural log only, never log10).
+- Center and scale (zero mean, unit variance) BEFORE PCA.
+- Standardize PC scores: divide raw PCA scores by `sqrt(eigenvalue)` so each score
+  vector has mean 0 and variance 1.
+- Return: scores (N × n_components), eigenvalues, eigenvectors, explained_variance_ratio.
+
+### 2. Central Composite Design (`sampling/design.py`) — Confirmed (2-component ESAP base); Extension (3- and 4-component variants)
+
+- ESAP implements 1 or 2 signal readings → CC2 (9 levels with center or 8 without).
+- The 3-component CC3 (14 levels without center) is the most common documented form in
+  Lesch et al. 1995 Paper 2; treat as Confirmed for 3 components.
+- 4-component variants are Extensions.
+- Axial points at `(±α, 0, …)` where `α = sqrt(radius_squared)`.
+- Cube points at `(±c, ±c, …)` where `c = sqrt(radius_squared / n_components)`.
+- Scale factor `radius_squared` defaults to 3.84 (Lesch/ESAP design constant; see source notes).
+- Return: `np.ndarray` of shape `(n_levels, n_components)`.
+
+### 3. PRS Design Matching — Confirmed
+
+- DLS_ij = Σ(κ_i − T_j)² for survey site i vs design level j.
+- For each design level, find the top-3 closest sites → ψ₁, ψ₂, ψ₃.
+- Enforce: no site appears in more than one ψ set; no site matched to >1 design level.
+- Use `scipy.spatial.KDTree` for efficient nearest-neighbor lookup in PC space.
+
+### 4. Spatial Uniformity & Swapping (`sampling/uniformity.py`) — Confirmed
+
+- `AD(β) = (1/N) Σᵢ min_{j∈β} d(site_i, site_j)` (Euclidean distance in geographic space).
+- Use `scipy.spatial.cKDTree` for fast distance queries.
+- Swapping: for each design level, try ψ₂ then ψ₃ replacement; keep if AD decreases.
+  Iterate until no further swap reduces AD.
+- Extra sites: greedy, one at a time from remaining N − n sites, minimise AD.
+
+### 5. Outlier Detection (`features/outliers.py`) — Confirmed
+
+- PC-space distance: `d = sqrt(κ₁² + κ₂² + … + κₚ²)`.
+- Flag sites where `d > threshold`. Default threshold must be documented with its
+  chi-square reference (df = n_components, desired alpha). Do not hardcode without labeling.
+- Return: boolean mask and distance array.
+
+### 6. MLR Calibration (`calibration/mlr.py`) — Confirmed
+
+- Dependent: `ln(ECe)` at calibration sites.
+- Independent: PC scores (κ₁, κ₂, …) + optional interaction terms + optional trend
+  surface (x, y, xy, x², y²).
+- Enumerate candidate model parameterizations, compute PRESS and APVE for each, rank
+  and return top models.
+- PRESS: `sum((e_i / (1 − h_i))²)` where `h_i = x_i' (X'X)⁻¹ x_i`.
+- APVE: `s² × mean(1 + x_j' (X'X)⁻¹ x_j)` across prediction sites.
+- Use `statsmodels.OLS` for fitting with full diagnostics.
+
+### 7. Residual Diagnostics (`calibration/diagnostics.py`) — Confirmed
+
+- Shapiro-Wilk normality test on residuals (via `scipy.stats.shapiro`).
+- Moran's I residual check: proximity matrix W (inverse-distance-squared, row-normalised).
+- Lack-of-fit F test requires duplicate soil cores; formula must reference source notes.
+
+### 8. Spatial Prediction (`predict/salinity.py`) — Confirmed (OLS-based)
+
+- Predict `ln(ECe)` at all N − n prediction sites using fitted MLR.
+- Prediction variance: `v_j² = s²(1 + x_j' (X'X)⁻¹ x_j)`.
+- Conditional probability: `P(a ≤ ECe ≤ b)` via `scipy.stats.t.cdf`.
+- Field average: `G = (n/N) ȳ_cal + ((N−n)/N) Ḡ_pred` with 95% confidence interval.
+- Range interval proportions and classification accuracy.
+
+---
+
+## Coding Standards
+
+- Python ≥ 3.12; type hints on ALL public function signatures.
+- Use built-in generics (`list[int]`, `dict[str, float]`) and prefer `X | None` over `Optional[X]`.
+- Do not use `from __future__ import annotations` in this repository.
+- NumPy-style docstrings on all public functions and classes.
+- Use numpy, scipy, scikit-learn, statsmodels, geopandas, shapely.
+- Prefer numpy vectorised operations over loops.
+- DataFrames for tabular I/O; ndarrays for linear algebra internals.
+- Coordinate reference systems: always carry CRS metadata (via geopandas).
+- Logging via `logging` module, not `print()`.
+- Tests with pytest; fixtures for synthetic survey grids in `tests/conftest.py`.
+
+---
+
+## Data Flow & Conventions
+
+- ECa readings: always positive floats in dS/m.
+- Log transform: `np.log` (natural log), never `log10`.
+- Coordinates: projected CRS (UTM preferred) for distance calculations.
+- PC scores: zero mean, unit variance AFTER dividing by `sqrt(eigenvalue)`.
+- Design levels: on the radius ellipsoid defined by `radius_squared`.
+- ESAP preset sample sizes: 6, 12, or 20 (custom sizes are Extensions).
+
+---
+
+## Key Domain Rules
+
+- RSSD is MODEL-BASED sampling: sites are selected deterministically, not randomly.
+- The calibration data alone CANNOT produce unbiased population estimates;
+  all inference flows through the fitted MLR model.
+- Always validate ECa data BEFORE running the sampling algorithm
+  (bivariate PC plots, Mahalanobis outlier detection).
+- Log-log transformation (`ln(ECa)` → `ln(ECe)`) linearises the relationship.
+- Duplicate soil cores at 4-6 sites are REQUIRED for lack-of-fit testing.
+- Survey should be conducted 3-4 days post-irrigation at field capacity.
+- Temperature correction to 25°C if spatial temperature variation > 10°C.
+
+---
+
+## ESAP modernization policy
+
+- **Algorithm fidelity over GUI parity:** Match Lesch/ESAP-RSSD statistics (PCA, σ QC,
+  CCD + design factor, DLS/ψ swapping, AD, cube-constrained support sites), not every
+  desktop menu step.
+- **Interchange formats:** Runtime survey ingest is **CSV / TXT** (`read_em_survey`);
+  outputs use **CSV / GeoPackage**. Canonical columns: `site_id`, `x`, `y`, ECa channels.
+  Legacy `.svy`, `.pro`, `rsd#.txt` are regression references only — convert before load.
+  See `.cursor/rules/esap-modernization.mdc` for the full workflow and anti-patterns.
+- **QC modes:** `detect_outliers` (chi-square, Paper 2 / Derived) and
+  `detect_outliers_esap` (3.5σ mask / 4.5σ outlier, ESAP manual Confirmed). Pass
+  `eligible_mask` into `run_rssd` after ESAP validation.
+- **Uniformity reporting:** `ad_final` (metres, Confirmed) and `opt_criteria`
+  (dimensionless, Derived — calibrate against legacy `rsd#.txt`).
+- **Design factor:** `central_composite_design(..., design_factor=0.90–1.10)` scales
+  CCD levels; recorded as ESAP “D-Factor Val” on exports.
+- **Future ESAP-Calibrate (Python):** Implement calibration in `rssdpy/calibration/`
+  using CSV survey + profile tables (site_id, depth, ECe, …), not `.pro`/`.svy` as
+  required runtime formats. MLR/DPPC algorithms follow Paper 1 / Rhoades 1989; file
+  parity is optional.
+
+---
+
+## References
+
+| Label | Citation |
+|-------|----------|
+| Paper 2 (RSSD algorithm) | Lesch, Strauss, Rhoades (1995). WRR 31(2): 387-398. https://doi.org/10.1029/94WR02180 |
+| Paper 1 (MLR vs Cokriging) | Lesch, Strauss, Rhoades (1995). WRR 31(2): 373-386. https://doi.org/10.1029/94WR02179 |
+| Lesch 2005 | Lesch (2005). Computers & Electronics in Agriculture 46: 153-179. |
+| Corwin & Lesch 2005 | Corwin & Lesch (2005). Computers & Electronics in Agriculture 46: 103-133. |
+| Rhoades 1989 (DPPC) | Rhoades et al. (1989). SSSAJ 53: 428-433. |
+| ESAP software | USDA ARS Salinity Lab. https://www.ars.usda.gov/…/esap-model/ |
+| SDSampling (Extension reference) | Banik (2024). UC Riverside Thesis. https://github.com/jayanta-banik/Sensor-Directed-Sampling |

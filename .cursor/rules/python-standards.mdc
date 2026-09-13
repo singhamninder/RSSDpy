@@ -1,0 +1,88 @@
+---
+description: Python quality standards for RSSDpy (docstrings, typing, formatting, error handling)
+globs: "**/*.py, **/*.ipynb"
+alwaysApply: false
+---
+
+# Python Quality Standards
+
+Global tooling (uv, ruff, ty, pytest) takes precedence over all project-level preferences.
+
+## Tooling Commands
+
+```bash
+uv sync --locked --all-extras --dev
+uv run ruff format .
+uv run ruff check --fix .
+uv run ty check .
+uv run pytest
+```
+
+Both `ruff format` and `ruff check` must exit with code `0` before work is considered done.
+
+---
+
+## Docstrings
+
+All public functions, methods, and classes must have NumPy-style docstrings.
+
+Required sections (include only those that apply):
+
+| Section | When to include |
+|---------|----------------|
+| `Parameters` | Function has one or more parameters |
+| `Returns` | Function returns a non-`None` value |
+| `Raises` | Function explicitly raises an exception |
+| `Examples` | Non-trivial usage or public API |
+| `Notes` | Important implementation details or caveats |
+
+Private helpers (`_name`) may skip full docstrings but benefit from a brief one-liner.
+
+---
+
+## Type Hints
+
+- All public function and method signatures must have complete type hints.
+- Use built-in generics (`list[int]`, `dict[str, float]`) for Python ≥ 3.9.
+- Prefer `X | None` over `Optional[X]` for Python ≥ 3.10.
+- Do not use `from __future__ import annotations` for Python 3.11+ targets.
+
+---
+
+## Comments
+
+- Comment only non-obvious logic, tricky flow, magic numbers, or algorithm steps.
+- Do not restate what the code already says clearly.
+- Imperative mood: "Clip to valid range", not "We clip to the valid range".
+
+---
+
+## Error Handling
+
+- Do not wrap internal operations in `try/except` to suppress errors; let bugs surface.
+- Validate inputs at system boundaries (CLI args, external files, user data), not between internal functions.
+- Fail fast with a clear exception when a precondition is violated and continuing would produce silent wrong results.
+
+---
+
+## Formatting — `.py` files
+
+Apply `uv run ruff format` and `uv run ruff check` before finishing any Python file.
+
+## Formatting — `.ipynb` notebooks
+
+Use `uv run ruff format` with notebook support enabled in `[tool.ruff]` (set `extend-include = ["*.ipynb"]`).
+
+---
+
+## Pre-submit Checklist
+
+- [ ] Every public function/method/class has a NumPy-style docstring.
+- [ ] Every public function/method has complete type hints.
+- [ ] Comments only where logic is non-obvious.
+- [ ] `uv run ruff format --check .` passes.
+- [ ] `uv run ruff check .` passes (zero errors).
+- [ ] `uv run ty check .` passes (or issues are acknowledged).
+- [ ] No broad `try/except` hides internal bugs.
+- [ ] Validation exists at system boundaries only.
+- [ ] Any silent-wrong-result condition raises clearly.

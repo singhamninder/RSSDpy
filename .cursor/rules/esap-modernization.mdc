@@ -1,0 +1,120 @@
+---
+description: Modern Python ESAP workflow — CSV/TXT interchange, algorithm parity, and Calibrate roadmap
+globs: "src/rssdpy/{io,features,sampling}/**/*.py,docs/theory/rssd-source-notes.md,README.md"
+alwaysApply: false
+---
+
+# ESAP modernization (RSSDpy)
+
+Use this rule when implementing or reviewing ESAP-related I/O, QC, sampling, or exports.
+
+## Principles
+
+1. **Same algorithms, modern packaging** — RSSD and (future) Calibrate logic follow
+   Lesch/ESAP papers and the ESAP 2.01 manual; workflows are library + tabular files,
+   not Windows GUI steps.
+2. **Canonical schema** — Surveys: `site_id`, `x`, `y`, ECa channel(s), optional `row`.
+   Outputs: CSV with `opt_criteria`, `design_factor`, `selection_type` (`core` / `support`).
+3. **Legacy files are optional** — `.svy`, `.pro`, `rsd#.txt`, `gps#.txt` support
+   regression only; do not block features on reproducing proprietary text layouts.
+
+## Survey ingest (boundary)
+
+- **Runtime inputs:** `.csv` and `.txt` only via `read_em_survey` / `load_eca_csv`.
+- TXT = whitespace-delimited; headerless files require explicit `column_names`.
+- Do **not** add `.xyz`, `.dat`, `.svy`, or extension-specific parser profiles — convert
+  vendor exports to canonical CSV/TXT first.
+- Validate at the boundary with `validate_canonical_survey` (projected CRS when distances matter).
+
+## Recommended RSSD workflow (ESAP regression)
+
+```python
+eca, coords, _ = read_em_survey(
+    "survey.txt",
+    eca_columns=["EMv", "EMh"],
+    has_header=False,
+    column_names=["site_id", "x", "y", "EMv", "EMh", "row"],
+    crs="EPSG:32611",
+    require_projected_crs=True,
+)
+pca = ECaPCA(n_components=2)
+eca_clean, scores, qc, original_idx = iterative_esap_validation(eca, pca)
+coords_clean = coords[original_idx]
+
+design_factor = 0.96
+plan = esap_sample_plan(n_components=2, target_size=12, design_factor=design_factor)
+design = central_composite_design(
+    n_components=2, include_center=False, design_factor=design_factor
+)
+result = run_rssd(
+    scores,
+    coords_clean,
+    design,
+    n_extra=plan.n_extra,
+    extra_mode="global",
+    eligible_mask=qc.eligible_mask,
+    original_indices=original_idx,
+    design_factor=design_factor,
+)
+# Compare result.opt_criteria to ESAP (not result.ad_final)
+export_selected_sites_csv(result, coords_clean, "selected.csv", design=design)
+```
+
+## RSSD QC
+
+- ESAP σ mode: `detect_outliers_esap(masking_std=3.5, outlier_std=4.5)`.
+- Iterative delete + re-PCA: `iterative_esap_validation`.
+- Pass `eligible_mask` to `run_rssd` so masked sites are never selected.
+- Chi-square mode (`detect_outliers`) is for Paper 2 / statistical QC — not the default
+  for ESAP desktop regression.
+
+## RSSD design & reporting
+
+- `design_factor` in `[0.90, 1.10]` (warn outside range); scales all CCD levels (ESAP D-Factor).
+- `extra_mode="global"` (default) to extend the core set to the target sample size
+  (Confirmed, `[P2]` steps 6–7: unrestricted greedy AD search). `"cube"` is reserved for
+  the separate `n_validation` monitoring/validation pass — do not use it to extend `n_extra`.
+- `esap_sample_plan(..., target_size in {6, 12, 20})` for preset sizes.
+- **`ad_final`** — average distance in **metres** (Confirmed).
+- **`opt_criteria`** — dimensionless ESAP uniformity index (Derived; calibrate vs `rsd#.txt`).
+  Do not compare or export `ad_final` where ESAP reports Opt-Criteria.
+
+## Index mapping
+
+- After QC filtering, always thread `original_indices` into `run_rssd` and use
+  `result.selected_original_indices` when joining back to `site_id` or external tables.
+- Never assume row order in a filtered frame equals original survey order.
+
+## ESAP-Calibrate (future)
+
+- Target: CSV profile data (`site_id`, depth, ECe, optional SP/moisture) joined to
+  survey PC scores — not required `.pro` import.
+- Keep `rssdpy/calibration/mlr.py` and `dppc.py` as algorithm homes; add thin
+  CSV loaders when Calibrate scope starts.
+
+## Regression reference (automated: `tests/test_esap_parity.py`)
+
+- Input: `examples/data/101710A_for_esap.txt` (5102 rows bundled; ESAP info file reports 5101 —
+  unresolved one-row discrepancy, see source notes §14).
+- Expected: `examples/data/106Frsd1_expected.txt` / `106Finfo_reference.txt` — n=12,
+  D-Factor **0.96**, Opt-Criteria **~1.26**.
+- Acceptance check (see source notes §14 for full status): PCA/QC stage-wise exact match,
+  ESAP's 10 core picks inside our ψ pools, our AD/Opt-Criteria ≤ ESAP's, ≥6/12 exact `site_id`
+  overlap. Not exact 12/12 — ESAP's tie-breaking order is not published.
+
+## Anti-patterns (observed in recent work)
+
+| Mistake | Correct approach |
+|---------|------------------|
+| Adding `.xyz` / `.dat` / `.svy` parsers | Canonical CSV/TXT + `column_names` for headerless TXT |
+| Using `detect_outliers` for ESAP regression | `iterative_esap_validation` + `eligible_mask` |
+| Comparing `ad_final` to ESAP Opt-Criteria | Use `result.opt_criteria` |
+| `chi2.ppf(0.95, df=3)` for design radius 3.84 | `df=1` or `1.96**2` (see `project_RSSD.mdc`) |
+| Skipping `original_indices` after QC | Pass through from validation to `run_rssd` / exports |
+| `extra_mode="cube"` to extend the core set (`n_extra`) | `extra_mode="global"` — `[P2]` steps 6–7 search ALL remaining sites, not cube levels only |
+| Requiring `.pro`/`.svy` at runtime | Optional regression references only |
+
+## Related rules
+
+- `project_RSSD.mdc` — algorithms, source-truth labels, architecture.
+- `docs/theory/rssd-source-notes.md` — Section 11 parity contract.

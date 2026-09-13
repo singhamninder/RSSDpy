@@ -1,0 +1,98 @@
+---
+rule_type: agent_request
+description: "Continuously improve this project's Cursor rules based on recurring mistakes and patterns"
+tags:
+  - meta
+  - learning
+  - automation
+---
+
+# Self-improve rule for Cursor
+
+You are an AI coding assistant that can improve this project's Cursor rules over time.
+
+## Purpose
+
+- Detect recurring mistakes, friction, and patterns in this codebase.
+- Propose and implement updates to `cursor/rules/*.mdc` so those issues stop recurring.
+- Keep rules lean, concrete, and aligned with how the code is actually written.
+
+## When to trigger self-improvement
+
+Consider updating or creating rules when you notice:
+
+- The same bug, style issue, or misunderstanding appears in 2–3 recent interactions.
+- You write the same explanation or “reminder” more than once in a short timeframe.
+- The user corrects you on a pattern that is clearly a project convention.
+- New frameworks, libraries, or workflows are introduced (e.g., a new ML pipeline or GEE workflow).
+
+If any of these are true, you should explicitly think:
+> “Can I capture this as a Cursor rule so it does not happen again?”
+
+## How to propose rule changes
+
+When self-improvement is appropriate:
+
+1. Summarize the pattern:
+   - Describe the recurring issue in 1–3 bullet points.
+   - Use concrete examples from the recent conversation (no raw logs, just the essence).
+
+2. Decide the change type:
+   - **New rule** – when no existing rule covers this area.
+   - **Extension** – when an existing rule is close but missing specifics.
+   - **Correction** – when an existing rule conflicts with how the code is actually written.
+
+3. Draft the rule change:
+   - For a new rule: generate a full `.mdc` file with frontmatter and sections as described in `cursor-rule.mdc`.
+   - For an update: propose a patch-like edit (section additions or replacements) rather than rewriting the whole file.
+
+4. Present the change clearly:
+   - Output only the updated or new rule content as valid `.mdc`.
+   - Include a short header comment explaining *why* this rule exists (1–3 sentences).
+
+## Scope and boundaries
+
+- Prefer narrow, local rules over broad, fuzzy meta-rules.
+- Do not add rules that merely restate generic best practices unless they are repeatedly violated in this project.
+- Keep rules aligned with the **existing** code style and architecture, even if you personally would choose differently.
+- If the user explicitly overrides a pattern, treat that as higher priority than any prior rule.
+
+## Examples of patterns to capture
+
+You should strongly consider rule updates when you see patterns like:
+
+- Type patterns (for example, “We always use `pydantic` models for API IO, never bare dicts.”).
+- Project-specific naming (for example, “All crop classification experiments live under `experiments/` and use a `<region>_<year>_<model>` naming scheme.”).
+- Remote sensing conventions (for example, “Use Sentinel-2 L2A; prefer surface reflectance; band ordering and scaling is standardized in `src/data/sentinel2.py`.”).
+- Infrastructure patterns (for example, “Use Vertex AI Pipelines for training; use GCS paths via `VERTEX_BUCKET` env; never hardcode local paths inside pipeline definitions.”).
+
+When you notice such a pattern in actual code or fixes, encode it in a rule.
+
+## How to update rules safely
+
+When you modify rules:
+
+- Preserve existing sections unless they are clearly wrong or obsolete.
+- Make changes additive where possible; deprecate old guidance with a short note instead of silently removing it.
+- Maintain the same tone, terminology, and structure as the rest of the rules.
+
+If you are unsure whether a convention is universal in the codebase:
+
+- Add it under a **“Provisional conventions”** subsection and phrase it as:
+  - “Observed in files X/Y/Z; follow this unless the user indicates a different pattern.”
+
+## Interaction with other rules
+
+When self-improving:
+
+- Respect the directory and naming guidance in `cursor-rule.mdc`.
+- Reference related rules in a **Related rules** section, but avoid deep nesting.
+- If a new rule overlaps heavily with an existing one, prefer merging or refactoring rather than duplication.
+
+## What to output when invoked
+
+When the user invokes this rule (for example, via an agent or explicit prompt):
+
+1. Briefly state the patterns you observed and the improvement you propose.
+2. Output one or more complete `.mdc` files (new or updated) that implement those improvements.
+3. Do not include chat logs or unrelated commentary; output only rule content and minimal explanation needed to understand the change.

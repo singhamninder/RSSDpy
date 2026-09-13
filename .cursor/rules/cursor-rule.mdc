@@ -1,0 +1,100 @@
+---
+rule_type: agent_request
+description: "How to add, edit, and maintain Cursor rules for this project"
+tags:
+  - meta
+  - workflow
+---
+
+# Cursor rules for this project
+
+You are an AI coding assistant working in this repository. Follow these guidelines whenever you create, edit, or apply Cursor rules.
+
+## Goals
+
+- Capture project-specific conventions so you stop repeating yourself.
+- Keep rules small, focused, and discoverable by file type or concern.
+- Continuously improve rules over time based on mistakes and friction.
+
+## Directory and filenames
+
+- All rules live under `.cursor/rules/` (note the leading dot).
+- Use one `.mdc` file per coherent topic or area.
+- Prefer *narrow* rules over giant catch-all files.
+- Use descriptive, kebab-case filenames, for example:
+  - `cursor-rule.mdc` – meta guidance on writing rules.
+  - `self-improve.mdc` – rule that lets the assistant refine rules.
+  - `stack-react-typescript.mdc` – React/TS conventions.
+  - `directory-structure.mdc` – project structure and important paths.
+  - `utils-types.mdc` – utility and typing conventions.
+- If a rule is specific to a framework or domain, include that in the name, for example:
+  - `ml-pipeline-python.mdc`
+  - `remote-sensing-workflows.mdc`
+  - `gee-scripts.mdc`
+
+## Structure of a rule file
+
+Every rule file should:
+
+1. Start with a YAML frontmatter block:
+   - `rule_type`: one of `always`, `auto_attach`, `agent_request`, or `manual`.
+   - `description`: short, actionable summary.
+   - Optional: `tags` array for discoverability.
+
+2. Use clear sections:
+   - **Context** – what part of the codebase this applies to.
+   - **Goals** – what this rule optimizes for.
+   - **Conventions** – concrete patterns to follow.
+   - **Anti-patterns** – what to avoid.
+   - **Examples** – short before/after code if useful.
+
+3. Avoid vague advice; prefer concrete, testable guidance, for example:
+   - Good: “Use explicit `TypedDict`/`Protocol` instead of `dict[str, Any]`.”
+   - Bad: “Write clean and readable code.”
+
+## When to create a new rule
+
+Create or update rules when you notice any of the following:
+
+- The AI repeats the same mistake 2–3 times in a similar context.
+- You must paste the same “reminder” instructions into chat more than once.
+- You find yourself fixing the same style/architecture issue repeatedly.
+- A new subsystem is added (e.g., a new service, pipeline, or UI surface).
+
+In these cases:
+
+1. Identify one representative file that “does it right”.
+2. Attach it in Cursor and run `/Generate Cursor Rules`.
+3. Save the resulting rule under `.cursor/rules/` with a clear name.
+4. Trim generic advice; keep project-specific patterns.
+
+## How to use this rule from chat
+
+When you want to generate or edit rules, use prompts like:
+
+- “Add Cursor rules: analyze the attached file and generate a new rule file that captures its conventions. Output a single `.mdc` file only.”
+- “Update the existing rule `<rule-name>.mdc` to reflect the attached changes in the code, keeping the same structure and style.”
+
+When generating new rules, the assistant should:
+
+- Respect the directory and naming conventions here.
+- Reuse existing sections and tone from similar rules.
+- Reference related rule files in a short **Related rules** section when helpful.
+
+## Referencing other rules
+
+A rule can reference another rule or project file for more detail, for example:
+
+- “See `.cursor/rules/directory-structure.mdc` for key paths and shared components.”
+- “See `.cursor/rules/stack-react-typescript.mdc` for React/TS patterns used here.”
+
+Keep references lightweight and avoid deep dependency chains between rules.
+
+## AGENTS.md vs Cursor rules
+
+- Root `AGENTS.md` is the **cross-tool** brief (Claude Code, Codex, and other
+  AGENTS.md consumers). Keep it short: commands, hard invariants, pointers.
+- Deep domain rules stay in `.cursor/rules/*.mdc` and `docs/theory/`.
+- When a hard invariant changes, update the deep rule first, then sync the
+  matching bullets in `AGENTS.md` if they are affected.
+- `CLAUDE.md` imports `@AGENTS.md`; do not fork shared instructions there.
