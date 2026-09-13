@@ -99,6 +99,18 @@ Python cells.
 3. Run cells top-to-bottom for load summary, ESAP QC, RSSD selection, CSV export,
    map, and PC diagnostics
 
+## Interactive app (Streamlit)
+
+Upload a survey, map its columns, and run RSSD from a browser — no code required.
+
+```bash
+uv run --extra app streamlit run app/streamlit_app.py
+```
+
+Deploy your own copy on [Streamlit Community Cloud](https://share.streamlit.io) by pointing it at
+this repo with main file `app/streamlit_app.py`; `requirements.txt` at the repo root installs the
+package (`.`) plus `streamlit` for you.
+
 ## Development
 
 ```bash

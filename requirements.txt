@@ -1,0 +1,4 @@
+# Used by Streamlit Community Cloud to install this app's dependencies.
+# Local/dev installs should use uv (see README.md) instead of this file.
+.
+streamlit>=1.40
