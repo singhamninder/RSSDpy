@@ -125,6 +125,18 @@ Each commit runs ruff (lint + format) and ty via pre-commit. Run tests manually:
 uv run pytest
 ```
 
+### Releasing
+
+Stable tags (`v0.1.0`) publish to PyPI; release-candidate tags (`v0.1.0rc1`) publish to
+TestPyPI — see `.github/workflows/release-*.yml`. Bump the version, tag, and push:
+
+```bash
+uv version 0.1.0        # or: uv version --bump patch
+git commit -am "Release v0.1.0"
+git tag v0.1.0
+git push origin master v0.1.0
+```
+
 ## References
 
 - Lesch, S.M., Strauss, D.J., and Rhoades, J.D. (1995). Spatial Prediction of Soil

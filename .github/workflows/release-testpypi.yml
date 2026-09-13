@@ -1,0 +1,55 @@
+name: Release to TestPyPI
+
+on:
+  push:
+    tags:
+      - "v*rc*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/rssdpy/
+    permissions:
+      id-token: write # required for TestPyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Verify tag matches package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(uv version --short)"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match pyproject version $pkg_version" >&2
+            exit 1
+          fi
+
+      - name: Lint, type-check, test
+        run: |
+          uv run ruff format --check src tests
+          uv run ruff check src tests
+          uv run ty check src tests
+          uv run pytest --cov=rssdpy --cov-fail-under=85
+
+      - name: Build (no local sources)
+        run: uv build --no-sources
+
+      - name: Smoke-test wheel import (isolated)
+        run: uv run --with "$(ls dist/*.whl)" --no-project -- python -c "import rssdpy; print(rssdpy.__version__)"
+
+      - name: Smoke-test sdist import (isolated)
+        run: uv run --with "$(ls dist/*.tar.gz)" --no-project -- python -c "import rssdpy; print(rssdpy.__version__)"
+
+      - name: Publish to TestPyPI
+        run: uv publish --index testpypi --trusted-publishing always
