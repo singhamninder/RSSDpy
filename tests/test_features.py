@@ -33,6 +33,29 @@ class TestECaPCA:
         np.testing.assert_allclose(scores.mean(axis=0), 0.0, atol=1e-10)
         np.testing.assert_allclose(scores.std(axis=0, ddof=1), 1.0, atol=1e-6)
 
+    def test_sign_convention_first_column_nonnegative(self, synthetic_eca_df: pd.DataFrame) -> None:
+        """Each component's loading on the first ECa column must be non-negative."""
+        pca = ECaPCA(n_components=2)
+        _, _, eigenvectors = pca.fit_transform(synthetic_eca_df)
+        assert (eigenvectors[0, :] >= 0).all()
+        assert pca.sign_ is not None and pca.sign_.shape == (2,)
+
+    def test_transform_applies_same_sign_as_fit(self, synthetic_eca_df: pd.DataFrame) -> None:
+        """transform() must reuse the sign fixed during fit_transform()."""
+        pca = ECaPCA(n_components=2)
+        scores_fit, _, _ = pca.fit_transform(synthetic_eca_df)
+        scores_again = pca.transform(synthetic_eca_df)
+        np.testing.assert_allclose(scores_fit, scores_again, atol=1e-10)
+
+    def test_sign_flip_does_not_change_pc_distances(self, synthetic_eca_df: pd.DataFrame) -> None:
+        """Sign is cosmetic: flipping it must not change PC-space distances from origin."""
+        pca = ECaPCA(n_components=2)
+        scores, _, _ = pca.fit_transform(synthetic_eca_df)
+        flipped = scores * np.array([1.0, -1.0])
+        np.testing.assert_allclose(
+            np.sqrt((scores**2).sum(axis=1)), np.sqrt((flipped**2).sum(axis=1)), atol=1e-10
+        )
+
     def test_three_components(self, synthetic_eca_df: pd.DataFrame) -> None:
         """Cannot request more components than ECa channels."""
         pca = ECaPCA(n_components=2)

@@ -45,10 +45,14 @@ class ECaPCA:
         Shape ``(n_components,)`` — variance explained by each component
         (= ``pca_.explained_variance_``).
     eigenvectors_ : np.ndarray
-        Shape ``(n_features, n_components)`` — principal component loadings
-        (= ``pca_.components_.T``).
+        Shape ``(n_features, n_components)`` — principal component loadings,
+        sign-corrected (see ``sign_``).
     explained_variance_ratio_ : np.ndarray
         Shape ``(n_components,)`` — fraction of total variance per component.
+    sign_ : np.ndarray
+        Shape ``(n_components,)`` — ``+1``/``-1`` per component, chosen so each
+        component's loading on the first ECa column is non-negative. Cosmetic only;
+        does not affect RSSD site selection (see source notes Section 13).
 
     Examples
     --------
@@ -70,6 +74,7 @@ class ECaPCA:
         self.eigenvalues_: np.ndarray | None = None
         self.eigenvectors_: np.ndarray | None = None
         self.explained_variance_ratio_: np.ndarray | None = None
+        self.sign_: np.ndarray | None = None
 
     def fit_transform(
         self,
@@ -126,11 +131,18 @@ class ECaPCA:
         eigenvalues = pca.explained_variance_
         scores = raw_scores / np.sqrt(eigenvalues)
 
+        # Fix the arbitrary eigenvector sign: first ECa column's loading non-negative.
+        # Cosmetic only (design templates are sign-symmetric); see source notes Section 13.
+        sign = np.where(pca.components_[:, 0] < 0, -1.0, 1.0)
+        scores = scores * sign
+        eigenvectors = pca.components_.T * sign
+
         self.scaler_ = scaler
         self.pca_ = pca
         self.eigenvalues_ = eigenvalues
-        self.eigenvectors_ = pca.components_.T
+        self.eigenvectors_ = eigenvectors
         self.explained_variance_ratio_ = pca.explained_variance_ratio_
+        self.sign_ = sign
 
         logger.debug(
             "ECaPCA fit: n=%d, n_components=%d, explained_var=%s",
@@ -138,7 +150,7 @@ class ECaPCA:
             self.n_components,
             np.round(self.explained_variance_ratio_, 3),
         )
-        return scores, eigenvalues, pca.components_.T
+        return scores, eigenvalues, eigenvectors
 
     def transform(self, eca: pd.DataFrame) -> np.ndarray:
         """Apply the fitted pipeline to new ECa data.
@@ -161,7 +173,12 @@ class ECaPCA:
         ValueError
             If any ECa value is ≤ 0.
         """
-        if self.pca_ is None or self.scaler_ is None or self.eigenvalues_ is None:
+        if (
+            self.pca_ is None
+            or self.scaler_ is None
+            or self.eigenvalues_ is None
+            or self.sign_ is None
+        ):
             raise RuntimeError("Call fit_transform before transform.")
 
         _validate_eca_positive(eca)
@@ -169,7 +186,7 @@ class ECaPCA:
         scaled = self.scaler_.transform(log_eca)
         raw_scores = self.pca_.transform(scaled)
         eigenvalues: np.ndarray = self.eigenvalues_
-        return raw_scores / np.sqrt(eigenvalues)
+        return (raw_scores / np.sqrt(eigenvalues)) * self.sign_
 
 
 def _validate_eca_positive(eca: pd.DataFrame) -> None:
