@@ -11,5 +11,6 @@ Lesch (2005). Computers and Electronics in Agriculture, 46:153–179.
 """
 
 from rssdpy._version import __version__
+from rssdpy.pipeline import ESAPRunResult, run_esap_rssd
 
-__all__ = ["__version__"]
+__all__ = ["__version__", "ESAPRunResult", "run_esap_rssd"]
