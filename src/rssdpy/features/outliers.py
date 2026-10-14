@@ -217,7 +217,7 @@ def iterative_esap_validation(
     outlier_std: float = ESAP_DEFAULT_OUTLIER_STD,
     max_iterations: int = 10,
 ) -> tuple[pd.DataFrame, np.ndarray, ESAPQCResult, np.ndarray]:
-    """Iteratively decorrelate, drop ESAP outliers, and re-fit PCA.
+    """Decorrelate iteratively, dropping ESAP outliers and re-fitting PCA.
 
     Matches the ESAP practice of deleting outlier sites and re-running
     decorrelation until no outliers remain.

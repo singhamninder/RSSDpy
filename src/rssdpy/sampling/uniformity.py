@@ -87,20 +87,20 @@ def characteristic_spacing(coords: np.ndarray) -> float:
 def opt_criteria_from_ad(ad: float, coords: np.ndarray) -> float:
     """Convert AD (metres) to an ESAP-like dimensionless Opt-Criteria value.
 
-      Parameters
-      ----------
+    Parameters
+    ----------
       ad : float
           Average nearest-calibration distance in metres.
       coords : np.ndarray
           Full survey coordinates used for the AD calculation.
 
-      Returns
-      -------
+    Returns
+    -------
       float
           Dimensionless uniformity index (lower is better; ESAP targets ≤1.30).
 
-      Notes
-      -----
+    Notes
+    -----
       **Derived / Extension:** ESAP does not publish a closed formula. This
       implementation uses ``Opt-Criteria ≈ AD / characteristic_spacing`` so
       results are comparable across field sizes. Calibrate against legacy
